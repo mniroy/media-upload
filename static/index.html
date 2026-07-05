@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Media Upload Hub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans h-screen flex overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="w-64 bg-white border-r flex flex-col shadow-sm">
+        <div class="p-6 border-b">
+            <h1 class="text-xl font-bold text-blue-600">Media Hub</h1>
+        </div>
+        <nav class="flex-1 p-4 space-y-2">
+            <a id="tab-live" class="nav-item flex items-center p-3 text-blue-700 bg-blue-50 rounded-lg cursor-pointer transition-colors">
+                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+                Dashboard
+            </a>
+            <a id="tab-files" class="nav-item flex items-center p-3 text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg cursor-pointer transition-colors">
+                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+                File Explorer
+            </a>
+            <a id="tab-history" class="nav-item flex items-center p-3 text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg cursor-pointer transition-colors">
+                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                History
+            </a>
+            <a id="tab-settings" class="nav-item flex items-center p-3 text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg cursor-pointer transition-colors">
+                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                Settings
+            </a>
+        </nav>
+        <div class="p-4 border-t bg-gray-50">
+            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Storage</h3>
+            <div class="space-y-2">
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600">Used</span>
+                    <span id="storage-used" class="font-medium">0 GB</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2">
+                    <div id="storage-bar" class="bg-blue-600 h-2 rounded-full" style="width: 0%"></div>
+                </div>
+                <div class="flex justify-between text-xs text-gray-500">
+                    <span id="storage-free">0 GB free</span>
+                    <span id="storage-total">0 GB total</span>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-y-auto bg-gray-50 p-8">
+        <!-- Dashboard View -->
+        <div id="view-live" class="view-section block">
+            <h2 class="text-2xl font-bold mb-6">Dashboard</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Local Copy Status -->
+                <div class="bg-white rounded-xl shadow-sm border p-6 flex flex-col h-[500px]">
+                    <div class="flex items-center justify-between border-b pb-4 mb-4">
+                        <h3 class="text-lg font-semibold flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+                            Local Copy Status
+                        </h3>
+                        <span class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">Idle</span>
+                    </div>
+                    <div class="flex-1 overflow-y-auto">
+                        <p id="local-status" class="text-sm text-gray-500 mb-4">Waiting for USB insertion...</p>
+                        <ul id="local-files" class="space-y-2"></ul>
+                    </div>
+                </div>
+
+                <!-- Cloud Upload Status -->
+                <div class="bg-white rounded-xl shadow-sm border p-6 flex flex-col h-[500px]">
+                    <div class="flex items-center justify-between border-b pb-4 mb-4">
+                        <h3 class="text-lg font-semibold flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                            Cloud Upload Status
+                        </h3>
+                        <span class="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded-full">Idle</span>
+                    </div>
+                    <div class="flex-1 overflow-y-auto">
+                        <p id="cloud-status" class="text-sm text-gray-500 mb-4">Waiting for files...</p>
+                        <ul id="cloud-files" class="space-y-2"></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- File Explorer View -->
+        <div id="view-files" class="view-section hidden">
+            <h2 class="text-2xl font-bold mb-6">File Explorer</h2>
+            <div class="bg-white rounded-xl shadow-sm border">
+                <div class="p-4 border-b flex justify-between items-center">
+                    <span class="text-gray-600 text-sm">/tmp/media_upload/staging</span>
+                    <button onclick="fetchFiles()" class="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded border">Refresh</button>
+                </div>
+                <div class="p-0">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-50 border-b">
+                            <tr>
+                                <th class="p-4 font-semibold text-gray-600">Filename</th>
+                                <th class="p-4 font-semibold text-gray-600 w-32">Size</th>
+                            </tr>
+                        </thead>
+                        <tbody id="files-body" class="divide-y">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- History View -->
+        <div id="view-history" class="view-section hidden">
+            <h2 class="text-2xl font-bold mb-6">Upload History</h2>
+            <div class="bg-white rounded-xl shadow-sm border">
+                <div class="p-4 border-b flex justify-end">
+                    <button onclick="fetchHistory()" class="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded border">Refresh</button>
+                </div>
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-gray-50 border-b">
+                        <tr>
+                            <th class="p-4 font-semibold text-gray-600">ID</th>
+                            <th class="p-4 font-semibold text-gray-600">Device</th>
+                            <th class="p-4 font-semibold text-gray-600">Start Time</th>
+                            <th class="p-4 font-semibold text-gray-600">Copy (Local)</th>
+                            <th class="p-4 font-semibold text-gray-600">Upload (Cloud)</th>
+                            <th class="p-4 font-semibold text-gray-600">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-body" class="divide-y">
+                        <!-- Populated via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Settings View -->
+        <div id="view-settings" class="view-section hidden">
+            <h2 class="text-2xl font-bold mb-6">Settings</h2>
+            <div class="bg-white rounded-xl shadow-sm border p-6 max-w-2xl">
+                <form class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Google Photos Auth Data (GP_AUTH_DATA)</label>
+                        <input type="text" id="gp-auth-data" placeholder="Enter auth data..." class="w-full border rounded-lg px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Upload Quality</label>
+                        <select id="upload-quality" class="w-full border rounded-lg px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option>Original Quality</option>
+                            <option>Storage Saver</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Upload Threads</label>
+                        <input type="number" id="upload-threads" value="10" class="w-full border rounded-lg px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <p class="text-xs text-gray-500 mt-1">Number of files to upload concurrently.</p>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="recursive" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300">
+                        <label for="recursive" class="ml-2 block text-sm font-semibold text-gray-700">
+                            Recursive folder scanning
+                        </label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="auto-album" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300">
+                        <label for="auto-album" class="ml-2 block text-sm font-semibold text-gray-700">
+                            Auto-create albums from folder structure
+                        </label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="skip-existing" checked class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300">
+                        <label for="skip-existing" class="ml-2 block text-sm font-semibold text-gray-700">
+                            Skip existing files
+                        </label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="delete-upload" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300">
+                        <label for="delete-upload" class="ml-2 block text-sm font-semibold text-gray-700">
+                            Delete local file after successful upload
+                        </label>
+                    </div>
+                    <div class="pt-4 border-t">
+                        <button type="button" id="save-settings-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">
+                            Save Settings
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </main>
+    <script src="/static/app.js"></script>
+</body>
+</html>

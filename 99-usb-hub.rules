@@ -1,0 +1,2 @@
+ACTION=="add", SUBSYSTEM=="block", KERNEL=="sd[a-z][0-9]", RUN+="/usr/bin/curl -X POST http://localhost:8000/api/usb_event -H 'Content-Type: application/json' -d '{\"action\": \"add\", \"device\": \"%k\"}'"
+ACTION=="remove", SUBSYSTEM=="block", KERNEL=="sd[a-z][0-9]", RUN+="/usr/bin/curl -X POST http://localhost:8000/api/usb_event -H 'Content-Type: application/json' -d '{\"action\": \"remove\", \"device\": \"%k\"}'"

@@ -1,0 +1,12 @@
+[Unit]
+Description=USB to Google Photos Auto-Upload Hub
+After=network.target
+
+[Service]
+User=USER_NAME
+WorkingDirectory=WORKING_DIRECTORY
+ExecStart=WORKING_DIRECTORY/venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
