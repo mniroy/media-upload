@@ -98,7 +98,7 @@ def get_run_details(run_id: int):
 @app.get("/api/files")
 def get_files(path: str = ""):
     import os
-    staging_dir = "/tmp/media_upload/staging"
+    staging_dir = "/var/lib/media_upload/staging"
     target_dir = os.path.join(staging_dir, path)
     
     if not os.path.exists(target_dir):
@@ -121,7 +121,7 @@ def get_files(path: str = ""):
 @app.get("/api/system/storage")
 def get_storage():
     import shutil
-    total, used, free = shutil.disk_usage("/")
+    total, used, free = shutil.disk_usage("/var/lib/media_upload")
     return {
         "total": total,
         "used": used,

@@ -4,10 +4,10 @@ import datetime
 import os
 from cryptography.fernet import Fernet
 
-DATABASE_URL = "sqlite:////tmp/media_upload/data.db"
-SECRET_KEY_FILE = "/tmp/media_upload/secret.key"
+DATABASE_URL = "sqlite:////var/lib/media_upload/data.db"
+SECRET_KEY_FILE = "/var/lib/media_upload/secret.key"
 
-os.makedirs("/tmp/media_upload", exist_ok=True)
+os.makedirs("/var/lib/media_upload", exist_ok=True)
 if not os.path.exists(SECRET_KEY_FILE):
     with open(SECRET_KEY_FILE, "wb") as f:
         f.write(Fernet.generate_key())

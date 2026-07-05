@@ -5,8 +5,8 @@ import subprocess
 from src.database import SessionLocal, Run, FileRecord
 from src.uploader import upload_file
 
-STAGING_DIR = "/tmp/media_upload/staging"
-MOUNT_BASE = "/tmp/media_upload/mnt"
+STAGING_DIR = "/var/lib/media_upload/staging"
+MOUNT_BASE = "/var/lib/media_upload/mnt"
 
 def sync_broadcast(event, data):
     try:
