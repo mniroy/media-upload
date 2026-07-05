@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Fetch initial data
     fetchStorage();
     fetchSettings();
+    fetchActiveDashboard();
 
     // WebSocket
     const ws = new WebSocket(`ws://${location.host}/ws`);
@@ -78,6 +79,65 @@ async function fetchStorage() {
         document.getElementById('storage-bar').style.width = percent + '%';
     } catch (e) {
         console.error("Failed to fetch storage", e);
+    }
+}
+
+async function fetchActiveDashboard() {
+    try {
+        const res = await fetch('/api/runs');
+        const runs = await res.json();
+        if (!runs || runs.length === 0) return;
+
+        const latest = runs[0]; // most recent first
+
+        if (latest.overall_status === 'running') {
+            // Show live in-progress state
+            const isCopying = latest.copied_files < latest.total_files;
+            document.getElementById('local-status').textContent =
+                `Copying from USB ${latest.usb_identifier}... (${latest.copied_files}/${latest.total_files} files)`;
+            document.getElementById('cloud-status').textContent = isCopying
+                ? 'Waiting for local copy to complete...'
+                : `Uploading to Cloud... (${latest.uploaded_files}/${latest.total_files} files)`;
+
+            // Fetch file details and populate lists
+            const detailRes = await fetch(`/api/runs/${latest.id}`);
+            const files = await detailRes.json();
+
+            const localList = document.getElementById('local-files');
+            const cloudList = document.getElementById('cloud-files');
+            localList.innerHTML = '';
+            cloudList.innerHTML = '';
+
+            files.forEach(f => {
+                if (f.copy_status === 'success') {
+                    const li = document.createElement('li');
+                    li.className = 'text-sm flex justify-between';
+                    li.innerHTML = `<span class="truncate text-gray-700 w-3/4">${f.filename}</span> <span class="text-green-600 font-medium">Copied</span>`;
+                    localList.appendChild(li);
+                }
+                if (f.upload_status === 'success') {
+                    const li = document.createElement('li');
+                    li.className = 'text-sm flex justify-between';
+                    li.innerHTML = `<span class="truncate text-gray-700 w-3/4">${f.filename}</span> <span class="text-purple-600 font-medium">Uploaded</span>`;
+                    cloudList.appendChild(li);
+                }
+            });
+
+            // Auto-scroll to bottom
+            localList.parentElement.scrollTop = localList.parentElement.scrollHeight;
+            cloudList.parentElement.scrollTop = cloudList.parentElement.scrollHeight;
+
+        } else if (latest.overall_status === 'completed') {
+            document.getElementById('local-status').textContent =
+                `Last run complete — ${latest.copied_files}/${latest.total_files} files copied from ${latest.usb_identifier}`;
+            document.getElementById('cloud-status').textContent =
+                `Last run complete — ${latest.uploaded_files}/${latest.total_files} files uploaded`;
+        } else if (latest.overall_status === 'failed') {
+            document.getElementById('local-status').textContent =
+                `Last run failed for device ${latest.usb_identifier}`;
+        }
+    } catch (e) {
+        console.error("Failed to fetch active dashboard", e);
     }
 }
 
