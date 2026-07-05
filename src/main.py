@@ -64,6 +64,12 @@ async def handle_usb_event(event: UsbEvent, background_tasks: BackgroundTasks):
         background_tasks.add_task(process_usb, event.device)
     return {"status": "received"}
 
+@app.post("/api/trigger_local_upload")
+async def trigger_local_upload(background_tasks: BackgroundTasks):
+    from src.usb_handler import process_local_directory
+    background_tasks.add_task(process_local_directory)
+    return {"status": "started"}
+
 @app.get("/api/runs")
 def get_runs():
     db = SessionLocal()

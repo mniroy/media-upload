@@ -65,6 +65,12 @@ document.addEventListener('DOMContentLoaded', () => {
             updateRing('upload', data.current - 1, data.total, data.total);
             addFileRow('cloud-files', data.filename, 'uploading');
 
+        } else if (payload.event === "upload_speed") {
+            const speedEl = document.getElementById('upload-speed');
+            if (speedEl) {
+                speedEl.textContent = `${data.speed_mbps} MB/s`;
+            }
+
         } else if (payload.event === "upload_done") {
             document.getElementById('cloud-status').textContent = 'Upload complete.';
             document.getElementById('upload-badge').textContent = 'Done';
@@ -329,4 +335,20 @@ async function fetchFiles(path = "") {
         }
         tbody.appendChild(tr);
     });
+}
+
+async function triggerLocalUpload() {
+    try {
+        const res = await fetch('/api/trigger_local_upload', {
+            method: 'POST'
+        });
+        if (res.ok) {
+            alert('Upload of staged files triggered!');
+        } else {
+            alert('Failed to trigger upload.');
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Error triggering upload.');
+    }
 }

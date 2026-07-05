@@ -103,7 +103,17 @@ def process_usb(device_name: str):
             sync_broadcast("upload_progress", {"filename": record.filename, "current": i+1, "total": len(files_to_process)})
             date_str = run.start_time.strftime('%Y-%m-%d')
             session_dir = os.path.join(STAGING_DIR, f"{date_str}_run_{run.id}")
-            upload_success, err = upload_file(os.path.join(session_dir, record.filename))
+            full_path = os.path.join(session_dir, record.filename)
+            
+            start_t = time.time()
+            upload_success, err = upload_file(full_path)
+            end_t = time.time()
+            
+            duration = end_t - start_t
+            file_size = os.path.getsize(full_path) if os.path.exists(full_path) else 0
+            speed_mbps = (file_size / (1024 * 1024)) / duration if duration > 0 else 0
+            sync_broadcast("upload_speed", {"filename": record.filename, "speed_mbps": round(speed_mbps, 2)})
+            
             if upload_success:
                 record.upload_status = "success"
             else:
@@ -111,6 +121,58 @@ def process_usb(device_name: str):
                 record.error_message = err
             db.commit()
     
+    sync_broadcast("upload_done", {})
+    run.overall_status = "completed"
+    db.commit()
+    db.close()
+    sync_broadcast("run_completed", {})
+
+def process_local_directory():
+    print("Processing local staging directory for uploads")
+    sync_broadcast("run_started", {"device": "local_disk"})
+    db = SessionLocal()
+    
+    run = Run(usb_identifier="local_disk")
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    
+    files_to_process = []
+    for root, dirs, files in os.walk(STAGING_DIR):
+        for file in files:
+            if file.startswith('.'):
+                continue
+            full_path = os.path.join(root, file)
+            # Use relative path for display/DB purposes
+            rel_file = os.path.relpath(full_path, STAGING_DIR)
+            record = FileRecord(run_id=run.id, filename=rel_file, copy_status="success")
+            db.add(record)
+            files_to_process.append((record, full_path))
+            
+    db.commit()
+    print(f"Found {len(files_to_process)} local files to process")
+    
+    sync_broadcast("copy_done", {}) # skip copy phase
+    
+    for i, (record, full_path) in enumerate(files_to_process):
+        sync_broadcast("upload_progress", {"filename": record.filename, "current": i+1, "total": len(files_to_process)})
+        
+        start_t = time.time()
+        upload_success, err = upload_file(full_path)
+        end_t = time.time()
+        
+        duration = end_t - start_t
+        file_size = os.path.getsize(full_path) if os.path.exists(full_path) else 0
+        speed_mbps = (file_size / (1024 * 1024)) / duration if duration > 0 else 0
+        sync_broadcast("upload_speed", {"filename": record.filename, "speed_mbps": round(speed_mbps, 2)})
+        
+        if upload_success:
+            record.upload_status = "success"
+        else:
+            record.upload_status = "failed"
+            record.error_message = err
+        db.commit()
+        
     sync_broadcast("upload_done", {})
     run.overall_status = "completed"
     db.commit()
