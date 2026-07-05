@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.websockets import WebSocketDisconnect
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Dict
 from src.database import SessionLocal, Run, FileRecord, Setting, encrypt_val, decrypt_val
@@ -18,7 +19,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# Mount frontend
+# Redirect root to the main UI
+@app.get("/")
+def root():
+    return RedirectResponse(url="/static/index.html")
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 class UsbEvent(BaseModel):
