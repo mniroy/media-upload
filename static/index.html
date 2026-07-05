@@ -55,37 +55,88 @@
         <div id="view-live" class="view-section block">
             <h2 class="text-2xl font-bold mb-6">Dashboard</h2>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
                 <!-- Local Copy Status -->
-                <div class="bg-white rounded-xl shadow-sm border p-6 flex flex-col h-[500px]">
-                    <div class="flex items-center justify-between border-b pb-4 mb-4">
-                        <h3 class="text-lg font-semibold flex items-center">
-                            <svg class="w-5 h-5 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
-                            Local Copy Status
-                        </h3>
-                        <span class="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">Idle</span>
+                <div class="bg-white rounded-2xl shadow-sm border p-6 flex flex-col">
+                    <div class="flex items-center justify-between mb-5">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+                            </div>
+                            <h3 class="text-base font-semibold text-gray-800">Local Copy Status</h3>
+                        </div>
+                        <span id="copy-badge" class="px-2.5 py-1 bg-gray-100 text-gray-500 text-xs font-semibold rounded-full">Idle</span>
                     </div>
-                    <div class="flex-1 overflow-y-auto">
-                        <p id="local-status" class="text-sm text-gray-500 mb-4">Waiting for USB insertion...</p>
-                        <ul id="local-files" class="space-y-2"></ul>
+
+                    <!-- Ring Chart -->
+                    <div class="flex items-center justify-center my-2">
+                        <div class="relative w-44 h-44">
+                            <svg class="w-full h-full -rotate-90" viewBox="0 0 120 120">
+                                <circle cx="60" cy="60" r="50" fill="none" stroke="#e5e7eb" stroke-width="10"/>
+                                <circle id="copy-ring" cx="60" cy="60" r="50" fill="none" stroke="#3b82f6" stroke-width="10"
+                                    stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="314"
+                                    style="transition: stroke-dashoffset 0.6s ease"/>
+                            </svg>
+                            <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                <span id="copy-pct" class="text-3xl font-bold text-gray-800">0%</span>
+                                <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Complete</span>
+                                <span id="copy-count" class="text-xs text-gray-400 mt-1">0 / 0 files</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Currently copying -->
+                    <p id="local-status" class="text-sm text-gray-400 text-center mb-4">Waiting for USB insertion...</p>
+
+                    <!-- File List -->
+                    <div class="mt-2">
+                        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Recent Files</p>
+                        <ul id="local-files" class="space-y-2 max-h-52 overflow-y-auto pr-1"></ul>
                     </div>
                 </div>
 
                 <!-- Cloud Upload Status -->
-                <div class="bg-white rounded-xl shadow-sm border p-6 flex flex-col h-[500px]">
-                    <div class="flex items-center justify-between border-b pb-4 mb-4">
-                        <h3 class="text-lg font-semibold flex items-center">
-                            <svg class="w-5 h-5 mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                            Cloud Upload Status
-                        </h3>
-                        <span class="px-2 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded-full">Idle</span>
+                <div class="bg-white rounded-2xl shadow-sm border p-6 flex flex-col">
+                    <div class="flex items-center justify-between mb-5">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                                <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                            </div>
+                            <h3 class="text-base font-semibold text-gray-800">Cloud Upload Status</h3>
+                        </div>
+                        <span id="upload-badge" class="px-2.5 py-1 bg-gray-100 text-gray-500 text-xs font-semibold rounded-full">Idle</span>
                     </div>
-                    <div class="flex-1 overflow-y-auto">
-                        <p id="cloud-status" class="text-sm text-gray-500 mb-4">Waiting for files...</p>
-                        <ul id="cloud-files" class="space-y-2"></ul>
+
+                    <!-- Ring Chart -->
+                    <div class="flex items-center justify-center my-2">
+                        <div class="relative w-44 h-44">
+                            <svg class="w-full h-full -rotate-90" viewBox="0 0 120 120">
+                                <circle cx="60" cy="60" r="50" fill="none" stroke="#e5e7eb" stroke-width="10"/>
+                                <circle id="upload-ring" cx="60" cy="60" r="50" fill="none" stroke="#9333ea" stroke-width="10"
+                                    stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="314"
+                                    style="transition: stroke-dashoffset 0.6s ease"/>
+                            </svg>
+                            <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                <span id="upload-pct" class="text-3xl font-bold text-gray-800">0%</span>
+                                <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Uploaded</span>
+                                <span id="upload-count" class="text-xs text-gray-400 mt-1">0 / 0 files</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Currently uploading -->
+                    <p id="cloud-status" class="text-sm text-gray-400 text-center mb-4">Waiting for files...</p>
+
+                    <!-- File List -->
+                    <div class="mt-2">
+                        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Recent Uploads</p>
+                        <ul id="cloud-files" class="space-y-2 max-h-52 overflow-y-auto pr-1"></ul>
                     </div>
                 </div>
+
             </div>
         </div>
+
 
         <!-- File Explorer View -->
         <div id="view-files" class="view-section hidden">

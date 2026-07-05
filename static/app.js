@@ -35,36 +35,102 @@ document.addEventListener('DOMContentLoaded', () => {
     ws.onmessage = function(event) {
         const payload = JSON.parse(event.data);
         const data = payload.data;
-        
+
         if (payload.event === "run_started") {
+            // Reset both panels
             document.getElementById('local-status').textContent = `Copying from USB ${data.device}...`;
+            document.getElementById('cloud-status').textContent = 'Waiting for local copy...';
             document.getElementById('local-files').innerHTML = '';
-            document.getElementById('cloud-status').textContent = `Waiting for files...`;
             document.getElementById('cloud-files').innerHTML = '';
+            document.getElementById('copy-badge').textContent = 'Copying';
+            document.getElementById('copy-badge').className = 'px-2.5 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full';
+            updateRing('copy', 0, 0, 0);
+            updateRing('upload', 0, 0, 0);
+
         } else if (payload.event === "copy_progress") {
-            const li = document.createElement('li');
-            li.className = "text-sm flex justify-between";
-            li.innerHTML = `<span class="truncate text-gray-700 w-3/4">${data.filename}</span> <span class="text-green-600 font-medium">Done</span>`;
-            document.getElementById('local-files').appendChild(li);
-            // Auto scroll
-            const container = document.getElementById('local-files').parentElement;
-            container.scrollTop = container.scrollHeight;
+            document.getElementById('local-status').textContent = `Copying: ${data.filename}`;
+            updateRing('copy', data.current - 1, data.total, data.total);
+            addFileRow('local-files', data.filename, 'copying');
+
         } else if (payload.event === "copy_done") {
-            document.getElementById('local-status').textContent = "Local copy complete.";
-            document.getElementById('cloud-status').textContent = "Uploading to Cloud...";
+            document.getElementById('local-status').textContent = 'Local copy complete.';
+            document.getElementById('cloud-status').textContent = 'Uploading to Google Photos...';
+            document.getElementById('copy-badge').textContent = 'Done';
+            document.getElementById('copy-badge').className = 'px-2.5 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full';
+            document.getElementById('upload-badge').textContent = 'Uploading';
+            document.getElementById('upload-badge').className = 'px-2.5 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full';
+
         } else if (payload.event === "upload_progress") {
-            const li = document.createElement('li');
-            li.className = "text-sm flex justify-between";
-            li.innerHTML = `<span class="truncate text-gray-700 w-3/4">${data.filename}</span> <span class="text-purple-600 font-medium">Done</span>`;
-            document.getElementById('cloud-files').appendChild(li);
-            // Auto scroll
-            const container = document.getElementById('cloud-files').parentElement;
-            container.scrollTop = container.scrollHeight;
+            document.getElementById('cloud-status').textContent = `Uploading: ${data.filename}`;
+            updateRing('upload', data.current - 1, data.total, data.total);
+            addFileRow('cloud-files', data.filename, 'uploading');
+
         } else if (payload.event === "upload_done") {
-            document.getElementById('cloud-status').textContent = "Cloud upload complete.";
+            document.getElementById('cloud-status').textContent = 'Upload complete.';
+            document.getElementById('upload-badge').textContent = 'Done';
+            document.getElementById('upload-badge').className = 'px-2.5 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full';
         }
     };
 });
+
+function updateRing(type, done, total, fullTotal) {
+    const circumference = 314;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    const offset = circumference - (pct / 100) * circumference;
+    const ring = document.getElementById(`${type}-ring`);
+    const pctEl = document.getElementById(`${type}-pct`);
+    const countEl = document.getElementById(`${type}-count`);
+    if (ring) ring.style.strokeDashoffset = offset;
+    if (pctEl) pctEl.textContent = pct + '%';
+    if (countEl) countEl.textContent = `${done} / ${total} files`;
+}
+
+function fileIcon(filename) {
+    const ext = filename.split('.').pop().toLowerCase();
+    const isVideo = ['mp4','mov','avi','mkv','dng'].includes(ext);
+    if (isVideo) {
+        return `<div class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+            <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>`;
+    }
+    return `<div class="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0">
+        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+    </div>`;
+}
+
+function statusChip(status) {
+    if (status === 'copied') return `<span class="text-xs font-medium text-green-600">(Copied)</span>`;
+    if (status === 'copying') return `<span class="text-xs font-medium text-blue-500">(Copying...)</span>`;
+    if (status === 'uploading') return `<span class="text-xs font-medium text-purple-500">(Uploading...)</span>`;
+    if (status === 'uploaded') return `<span class="text-xs font-medium text-green-600">(Uploaded)</span>`;
+    return `<span class="text-xs font-medium text-gray-400">(Queued)</span>`;
+}
+
+function addFileRow(listId, filename, status) {
+    const list = document.getElementById(listId);
+    if (!list) return;
+    // Update existing row if present
+    const existing = list.querySelector(`[data-file="${CSS.escape(filename)}"]`);
+    if (existing) {
+        existing.querySelector('.status-chip').innerHTML = statusChip(status);
+        return;
+    }
+    const li = document.createElement('li');
+    li.setAttribute('data-file', filename);
+    li.className = 'flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0';
+    const name = filename.split('/').pop();
+    li.innerHTML = `
+        ${fileIcon(filename)}
+        <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-gray-700 truncate">${name}</p>
+            <span class="status-chip">${statusChip(status)}</span>
+        </div>
+    `;
+    list.insertBefore(li, list.firstChild);
+    list.parentElement.scrollTop = 0;
+}
+
+
 
 async function fetchStorage() {
     try {
@@ -88,53 +154,63 @@ async function fetchActiveDashboard() {
         const runs = await res.json();
         if (!runs || runs.length === 0) return;
 
-        const latest = runs[0]; // most recent first
+        const latest = runs[0];
 
-        if (latest.overall_status === 'running') {
-            // Show live in-progress state
-            const isCopying = latest.copied_files < latest.total_files;
-            document.getElementById('local-status').textContent =
-                `Copying from USB ${latest.usb_identifier}... (${latest.copied_files}/${latest.total_files} files)`;
-            document.getElementById('cloud-status').textContent = isCopying
-                ? 'Waiting for local copy to complete...'
-                : `Uploading to Cloud... (${latest.uploaded_files}/${latest.total_files} files)`;
+        if (latest.overall_status === 'running' || latest.overall_status === 'completed') {
+            const copiedPct = latest.total_files > 0 ? Math.round((latest.copied_files / latest.total_files) * 100) : 0;
+            const uploadedPct = latest.total_files > 0 ? Math.round((latest.uploaded_files / latest.total_files) * 100) : 0;
 
-            // Fetch file details and populate lists
+            updateRing('copy', latest.copied_files, latest.total_files, latest.total_files);
+            updateRing('upload', latest.uploaded_files, latest.total_files, latest.total_files);
+
+            if (latest.overall_status === 'running') {
+                const isCopying = latest.copied_files < latest.total_files;
+                document.getElementById('local-status').textContent = isCopying
+                    ? `Copying from USB ${latest.usb_identifier}... (${latest.copied_files}/${latest.total_files} files)`
+                    : `Copy complete — ${latest.copied_files}/${latest.total_files} files`;
+                document.getElementById('cloud-status').textContent = isCopying
+                    ? 'Waiting for local copy to complete...'
+                    : `Uploading to Google Photos... (${latest.uploaded_files}/${latest.total_files} files)`;
+                document.getElementById('copy-badge').textContent = isCopying ? 'Copying' : 'Done';
+                document.getElementById('copy-badge').className = isCopying
+                    ? 'px-2.5 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full'
+                    : 'px-2.5 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full';
+                document.getElementById('upload-badge').textContent = isCopying ? 'Waiting' : 'Uploading';
+                document.getElementById('upload-badge').className = 'px-2.5 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full';
+            } else {
+                document.getElementById('local-status').textContent = `Complete — ${latest.copied_files}/${latest.total_files} files from ${latest.usb_identifier}`;
+                document.getElementById('cloud-status').textContent = `Complete — ${latest.uploaded_files}/${latest.total_files} files uploaded`;
+                document.getElementById('copy-badge').textContent = 'Done';
+                document.getElementById('copy-badge').className = 'px-2.5 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full';
+                document.getElementById('upload-badge').textContent = 'Done';
+                document.getElementById('upload-badge').className = 'px-2.5 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full';
+            }
+
+            // Populate recent file lists from DB
             const detailRes = await fetch(`/api/runs/${latest.id}`);
             const files = await detailRes.json();
 
-            const localList = document.getElementById('local-files');
-            const cloudList = document.getElementById('cloud-files');
-            localList.innerHTML = '';
-            cloudList.innerHTML = '';
+            document.getElementById('local-files').innerHTML = '';
+            document.getElementById('cloud-files').innerHTML = '';
 
-            files.forEach(f => {
-                if (f.copy_status === 'success') {
-                    const li = document.createElement('li');
-                    li.className = 'text-sm flex justify-between';
-                    li.innerHTML = `<span class="truncate text-gray-700 w-3/4">${f.filename}</span> <span class="text-green-600 font-medium">Copied</span>`;
-                    localList.appendChild(li);
-                }
-                if (f.upload_status === 'success') {
-                    const li = document.createElement('li');
-                    li.className = 'text-sm flex justify-between';
-                    li.innerHTML = `<span class="truncate text-gray-700 w-3/4">${f.filename}</span> <span class="text-purple-600 font-medium">Uploaded</span>`;
-                    cloudList.appendChild(li);
+            files.slice().reverse().forEach((f, idx) => {
+                let copyStatus = 'queued';
+                if (f.copy_status === 'success') copyStatus = 'copied';
+                else if (f.copy_status === 'pending' && idx === 0) copyStatus = 'copying';
+                addFileRow('local-files', f.filename, copyStatus);
+
+                let uploadStatus = 'queued';
+                if (f.upload_status === 'success') uploadStatus = 'uploaded';
+                else if (f.upload_status === 'pending' && f.copy_status === 'success') uploadStatus = 'queued';
+                if (f.copy_status === 'success' || f.upload_status === 'success') {
+                    addFileRow('cloud-files', f.filename, uploadStatus);
                 }
             });
 
-            // Auto-scroll to bottom
-            localList.parentElement.scrollTop = localList.parentElement.scrollHeight;
-            cloudList.parentElement.scrollTop = cloudList.parentElement.scrollHeight;
-
-        } else if (latest.overall_status === 'completed') {
-            document.getElementById('local-status').textContent =
-                `Last run complete — ${latest.copied_files}/${latest.total_files} files copied from ${latest.usb_identifier}`;
-            document.getElementById('cloud-status').textContent =
-                `Last run complete — ${latest.uploaded_files}/${latest.total_files} files uploaded`;
         } else if (latest.overall_status === 'failed') {
-            document.getElementById('local-status').textContent =
-                `Last run failed for device ${latest.usb_identifier}`;
+            document.getElementById('local-status').textContent = `Last run failed for device ${latest.usb_identifier}`;
+            document.getElementById('copy-badge').textContent = 'Failed';
+            document.getElementById('copy-badge').className = 'px-2.5 py-1 bg-red-100 text-red-700 text-xs font-semibold rounded-full';
         }
     } catch (e) {
         console.error("Failed to fetch active dashboard", e);
