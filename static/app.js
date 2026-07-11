@@ -134,6 +134,9 @@ function handleWsMessage(event) {
         case 'state_sync':
             onStateSync(data);
             break;
+        case 'auto_copy_toggled':
+            updateAutoCopyBadges(data.enabled);
+            break;
         case 'run_started':
             onRunStarted(data);
             break;
@@ -181,6 +184,9 @@ function onStateSync(s) {
     // s is the _live_state object from the server
     const phase = s.phase || 'idle';
     currentDevice = s.device;
+    
+    // Update auto-copy badges
+    updateAutoCopyBadges(s.auto_copy_enabled);
 
     // Always restore USB info bar if we have it
     if (s.usb_info && s.device && s.device !== 'local_disk') {
@@ -656,6 +662,40 @@ function setSpeed(value, loading = false) {
     el.textContent = loading ? '... MB/s' : (value === '—' ? '— MB/s' : `${value} MB/s`);
 }
 
+function updateAutoCopyBadges(enabled) {
+    const sidebarBadge = document.getElementById('sidebar-service-badge');
+    const dashBadge = document.getElementById('dashboard-service-badge');
+    const toggleBtn = document.getElementById('btn-toggle-service');
+    
+    if (enabled) {
+        if (sidebarBadge) {
+            sidebarBadge.textContent = 'Active';
+            sidebarBadge.className = 'px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full';
+        }
+        if (dashBadge) {
+            dashBadge.textContent = 'Auto-Copy Active';
+            dashBadge.className = 'px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full';
+        }
+        if (toggleBtn) {
+            toggleBtn.textContent = 'Stop Service';
+            toggleBtn.className = 'bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm shadow-sm';
+        }
+    } else {
+        if (sidebarBadge) {
+            sidebarBadge.textContent = 'Suspended';
+            sidebarBadge.className = 'px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs font-bold rounded-full';
+        }
+        if (dashBadge) {
+            dashBadge.textContent = 'Auto-Copy Suspended';
+            dashBadge.className = 'px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded-full';
+        }
+        if (toggleBtn) {
+            toggleBtn.textContent = 'Start Service';
+            toggleBtn.className = 'bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm shadow-sm';
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // File row helpers
 // ---------------------------------------------------------------------------
@@ -1001,4 +1041,42 @@ function escapeHtml(str) {
 function escapeAttr(str) {
     if (!str) return '';
     return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// ---------------------------------------------------------------------------
+// System Controls
+// ---------------------------------------------------------------------------
+
+async function systemToggleService() {
+    const btn = document.getElementById('btn-toggle-service');
+    const isStopping = btn && btn.textContent.trim() === 'Stop Service';
+    const endpoint = isStopping ? '/api/system/stop' : '/api/system/start';
+    
+    try {
+        await fetch(endpoint, { method: 'POST' });
+        showToast(isStopping ? 'Auto-copy service suspended' : 'Auto-copy service started', isStopping ? '⏸️' : '▶️');
+        // updateAutoCopyBadges will be called via WS broadcast automatically
+    } catch (e) {
+        showToast('Failed to toggle service.', '✕');
+    }
+}
+
+async function systemRestart() {
+    if (!confirm('Are you sure you want to restart the system? Any ongoing transfers will be aborted.')) return;
+    try {
+        await fetch('/api/system/restart', { method: 'POST' });
+        showToast('System is restarting...', '🔄');
+    } catch (e) {
+        showToast('Failed to restart system.', '✕');
+    }
+}
+
+async function systemShutdown() {
+    if (!confirm('Are you sure you want to shut down the system? Any ongoing transfers will be aborted.')) return;
+    try {
+        await fetch('/api/system/shutdown', { method: 'POST' });
+        showToast('System is shutting down...', '🔌');
+    } catch (e) {
+        showToast('Failed to shut down system.', '✕');
+    }
 }

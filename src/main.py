@@ -33,6 +33,7 @@ _live_state = {
     "folders": [],            # folder list pending selection after copy
     "auto_upload_seconds": 30,
     "error": None,
+    "auto_copy_enabled": True,
 }
 
 @asynccontextmanager
@@ -40,6 +41,13 @@ async def lifespan(app: FastAPI):
     import asyncio
     global main_loop
     main_loop = asyncio.get_running_loop()
+    
+    # Init auto_copy_enabled from DB
+    db = SessionLocal()
+    setting = db.query(Setting).filter(Setting.key == "AUTO_COPY_ENABLED").first()
+    _live_state["auto_copy_enabled"] = setting.value != "false" if setting else True
+    db.close()
+    
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -100,9 +108,14 @@ def get_settings():
 
 @app.post("/api/usb_event")
 async def handle_usb_event(event: UsbEvent, background_tasks: BackgroundTasks):
-    if event.action == "add":
+    db = SessionLocal()
+    setting = db.query(Setting).filter(Setting.key == "AUTO_COPY_ENABLED").first()
+    is_enabled = setting.value != "false" if setting else True
+    db.close()
+
+    if is_enabled and event.action == "add":
         background_tasks.add_task(process_usb, event.device)
-    return {"status": "received"}
+    return {"status": "received", "ignored": not is_enabled}
 
 # ---------------------------------------------------------------------------
 # USB Device Info
@@ -265,6 +278,51 @@ def get_storage():
     return {"total": total, "used": used, "free": free}
 
 # ---------------------------------------------------------------------------
+# System Controls
+# ---------------------------------------------------------------------------
+
+@app.post("/api/system/stop")
+def system_stop():
+    db = SessionLocal()
+    setting = db.query(Setting).filter(Setting.key == "AUTO_COPY_ENABLED").first()
+    if setting:
+        setting.value = "false"
+    else:
+        db.add(Setting(key="AUTO_COPY_ENABLED", value="false"))
+    db.commit()
+    db.close()
+    _live_state["auto_copy_enabled"] = False
+    trigger_broadcast("auto_copy_toggled", {"enabled": False})
+    return {"status": "stopped"}
+
+@app.post("/api/system/start")
+def system_start():
+    db = SessionLocal()
+    setting = db.query(Setting).filter(Setting.key == "AUTO_COPY_ENABLED").first()
+    if setting:
+        setting.value = "true"
+    else:
+        db.add(Setting(key="AUTO_COPY_ENABLED", value="true"))
+    db.commit()
+    db.close()
+    _live_state["auto_copy_enabled"] = True
+    trigger_broadcast("auto_copy_toggled", {"enabled": True})
+    return {"status": "started"}
+
+@app.post("/api/system/shutdown")
+def system_shutdown():
+    import subprocess
+    subprocess.Popen(["sudo", "shutdown", "now"])
+    return {"status": "shutting_down"}
+
+@app.post("/api/system/restart")
+def system_restart():
+    import subprocess
+    subprocess.Popen(["sudo", "reboot"])
+    return {"status": "restarting"}
+
+
+# ---------------------------------------------------------------------------
 # WebSocket
 # ---------------------------------------------------------------------------
 
@@ -350,6 +408,8 @@ def _update_state(event_type: str, data: dict):
         if data.get("error"):
             s["phase"] = "failed"
             s["error"] = data["error"]
+    elif event_type == "auto_copy_toggled":
+        s["auto_copy_enabled"] = data.get("enabled", True)
 
 async def broadcast_event(event_type: str, data: dict):
     _update_state(event_type, data)
