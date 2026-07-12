@@ -17,7 +17,7 @@ const MAX_SPEED_SAMPLES = 5;
 // ---------------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
     // Navigation
-    const tabs = ['live', 'files', 'history', 'settings'];
+    const tabs = ['live', 'files', 'history', 'settings', 'extdrive'];
     tabs.forEach(tab => {
         document.getElementById(`tab-${tab}`).addEventListener('click', (e) => {
             document.querySelectorAll('.view-section').forEach(el => {
@@ -28,14 +28,19 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById(`view-${tab}`).classList.add('block');
 
             document.querySelectorAll('.nav-item').forEach(el => {
-                el.classList.remove('bg-blue-50', 'text-blue-700');
+                el.classList.remove('bg-blue-50', 'text-blue-700', 'bg-amber-50', 'text-amber-700');
                 el.classList.add('text-gray-600');
             });
             e.currentTarget.classList.remove('text-gray-600');
-            e.currentTarget.classList.add('bg-blue-50', 'text-blue-700');
+            if (tab === 'extdrive') {
+                e.currentTarget.classList.add('bg-amber-50', 'text-amber-700');
+            } else {
+                e.currentTarget.classList.add('bg-blue-50', 'text-blue-700');
+            }
 
             if (tab === 'history') fetchHistory();
             if (tab === 'files') fetchFiles();
+            if (tab === 'extdrive') { fetchExtDriveStatus(); fetchExtDriveHistory(); }
         });
     });
 
@@ -173,6 +178,34 @@ function handleWsMessage(event) {
         case 'run_completed':
             onRunCompleted(data);
             break;
+        // --- External Drive events (separate workflow) ---
+        case 'ext_run_started':
+            onExtRunStarted(data);
+            break;
+        case 'ext_scan_started':
+            onExtScanStarted(data);
+            break;
+        case 'ext_scan_done':
+            onExtScanDone(data);
+            break;
+        case 'ext_upload_started':
+            onExtUploadStarted(data);
+            break;
+        case 'ext_upload_progress':
+            onExtUploadProgress(data);
+            break;
+        case 'ext_upload_speed':
+            onExtUploadSpeed(data);
+            break;
+        case 'ext_upload_stopped':
+            onExtUploadStopped(data);
+            break;
+        case 'ext_upload_done':
+            onExtUploadDone(data);
+            break;
+        case 'ext_run_completed':
+            onExtRunCompleted(data);
+            break;
     }
 }
 
@@ -302,6 +335,54 @@ function onStateSync(s) {
     // (don't re-call if a live process is actively running — would flash)
     if (phase === 'idle' || phase === 'completed' || phase === 'failed') {
         fetchActiveDashboard();
+    }
+
+    // Restore ext drive state
+    const extPhase = s.ext_phase || 'idle';
+    extState.phase = extPhase;
+    extState.runId = s.ext_run_id;
+    extState.current = s.ext_upload_current || 0;
+    extState.total = s.ext_upload_total || 0;
+    extState.speedMbps = s.ext_speed_mbps;
+
+    if (s.ext_upload_total > 0) {
+        updateExtRing(s.ext_upload_current || 0, s.ext_upload_total);
+    }
+    if (s.ext_speed_mbps !== null && s.ext_speed_mbps !== undefined) {
+        setExtSpeed(s.ext_speed_mbps.toFixed(2));
+    }
+
+    switch (extPhase) {
+        case 'scanning':
+            setExtPhaseBadge('Scanning', 'amber');
+            setExtStatusText(`Counting files on drive… ${s.ext_upload_total > 0 ? s.ext_upload_total + ' found' : ''}`);
+            showExtControls(true, false);
+            break;
+        case 'uploading':
+            setExtPhaseBadge('Uploading', 'amber');
+            setExtStatusText(s.ext_current_file ? `Uploading: ${s.ext_current_file}` : 'Uploading to Google Photos…');
+            showExtControls(true, false);
+            break;
+        case 'upload_paused':
+            setExtPhaseBadge('Paused', 'yellow');
+            setExtStatusText('Upload paused.');
+            showExtControls(true, true);
+            break;
+        case 'upload_done':
+        case 'completed':
+            setExtPhaseBadge('Done', 'green');
+            setExtStatusText(`Complete — ${s.ext_upload_current}/${s.ext_upload_total} files uploaded.`);
+            showExtControls(false, false);
+            if (s.ext_upload_total > 0) updateExtRing(s.ext_upload_total, s.ext_upload_total);
+            break;
+        case 'failed':
+            setExtPhaseBadge('Error', 'red');
+            setExtStatusText(`Error: ${s.ext_error || 'Unknown error'}`);
+            showExtControls(false, false);
+            break;
+        case 'idle':
+        default:
+            break;
     }
 }
 
@@ -1023,7 +1104,10 @@ function formatBytes(bytes, decimals = 2) {
 
 function formatDateTime(isoStr) {
     if (!isoStr) return '—';
-    const d = new Date(isoStr);
+    // Server stores UTC but omits the Z suffix — add it so the browser
+    // correctly converts to local timezone instead of treating it as local time.
+    const utc = isoStr.endsWith('Z') || isoStr.includes('+') ? isoStr : isoStr + 'Z';
+    const d = new Date(utc);
     if (isNaN(d)) return isoStr;
     return d.toLocaleString();
 }
@@ -1080,3 +1164,368 @@ async function systemShutdown() {
         showToast('Failed to shut down system.', '✕');
     }
 }
+
+// =============================================================================
+// EXTERNAL DRIVE — completely separate from USB copy+upload workflow
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// Ext drive state object
+// ---------------------------------------------------------------------------
+const extState = {
+    phase: 'idle',       // idle | scanning | uploading | upload_paused | upload_done | completed | failed
+    runId: null,
+    current: 0,
+    total: 0,
+    speedMbps: null,
+};
+let extSpeedSamples = [];
+
+// ---------------------------------------------------------------------------
+// WS event handlers — ext_ prefixed
+// ---------------------------------------------------------------------------
+
+function onExtRunStarted(data) {
+    extState.phase = 'scanning';
+    extState.runId = data.run_id;
+    extState.current = 0;
+    extState.total = 0;
+    extSpeedSamples = [];
+    setExtPhaseBadge('Scanning…', 'amber');
+    setExtStatusText('Scanning external drive for media files…');
+    showExtControls(true, false);
+    setExtNavBadge(true);
+    updateExtRing(0, 0);
+    document.getElementById('ext-files').innerHTML = '';
+    const emptyMsg = document.getElementById('ext-files-empty');
+    if (emptyMsg) emptyMsg.classList.remove('hidden');
+    // Show the in-progress session in history immediately
+    fetchExtDriveHistory();
+}
+
+function onExtScanStarted(data) {
+    setExtStatusText('Counting media files on the drive…');
+}
+
+function onExtScanDone(data) {
+    extState.total = data.total || 0;
+    setExtStatusText(`Found ${extState.total.toLocaleString()} media files. Starting upload…`);
+    updateExtRing(0, extState.total);
+}
+
+function onExtUploadStarted(data) {
+    extState.phase = 'uploading';
+    extState.total = data.total || 0;
+    setExtPhaseBadge('Uploading', 'amber');
+    setExtStatusText('Uploading to Google Photos…');
+    showExtControls(true, false);
+    updateExtRing(0, extState.total);
+}
+
+function onExtUploadProgress(data) {
+    const status = data.status || 'uploading';
+    const filename = data.filename || (data.filepath || '').split('/').pop();
+    extState.current = data.current || 0;
+    extState.total = data.total || extState.total;
+
+    updateExtRing(extState.current, extState.total);
+
+    const statusMsgMap = {
+        uploading:               `Uploading: ${filename}`,
+        uploaded:                `✓ Uploaded: ${filename}`,
+        already_in_photos:       `☁ Already in Photos: ${filename}`,
+        skipped:                 `— Skipped: ${filename}`,
+        skipped_already_uploaded:`— Previously uploaded: ${filename}`,
+        failed:                  `⚠ Failed: ${filename}`,
+    };
+    setExtStatusText(statusMsgMap[status] || `Processing: ${filename}`);
+
+    if (status !== 'uploading' && status !== 'skipped_already_uploaded') {
+        addExtFileRow(filename, data.filepath || filename, status);
+    }
+}
+
+function onExtUploadSpeed(data) {
+    const mbps = data.speed_mbps;
+    if (mbps === null || mbps === undefined) return;
+    extSpeedSamples.push(mbps);
+    if (extSpeedSamples.length > 5) extSpeedSamples.shift();
+    const avg = extSpeedSamples.reduce((a, b) => a + b, 0) / extSpeedSamples.length;
+    setExtSpeed(avg.toFixed(2));
+    extState.speedMbps = avg;
+}
+
+function onExtUploadStopped(data) {
+    extState.phase = 'upload_paused';
+    setExtPhaseBadge('Paused', 'yellow');
+    setExtStatusText(`Upload paused at ${data.at} / ${data.total} files. Click Resume to continue.`);
+    showExtControls(true, true); // show resume, hide pause
+}
+
+function onExtUploadDone(data) {
+    extState.phase = 'upload_done';
+    const { uploaded = 0, failed = 0, skipped = 0, total = extState.total } = data;
+    setExtPhaseBadge('Done', 'green');
+    setExtStatusText(`Complete — ${uploaded.toLocaleString()} uploaded, ${skipped} skipped, ${failed} failed.`);
+    showExtControls(false, false);
+    setExtSpeed('—');
+    extSpeedSamples = [];
+    updateExtRing(total, total);
+}
+
+function onExtRunCompleted(data) {
+    if (data.error) {
+        extState.phase = 'failed';
+        setExtPhaseBadge('Error', 'red');
+        setExtStatusText(`Error: ${data.error}`);
+        showExtControls(false, false);
+        setExtNavBadge(false);
+    } else {
+        extState.phase = 'completed';
+        setExtNavBadge(false);
+        fetchExtDriveHistory();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// API calls
+// ---------------------------------------------------------------------------
+
+async function extStartUpload() {
+    const phase = extState.phase;
+    if (phase === 'scanning' || phase === 'uploading') {
+        showToast('Upload already in progress.', 'ℹ️');
+        return;
+    }
+    try {
+        const res = await fetch('/api/extdrive/upload', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'already_running') {
+            showToast('Already running — check the Ext Drive tab.', 'ℹ️');
+        } else {
+            showToast('External drive upload started.', '💾');
+        }
+    } catch (e) {
+        showToast('Failed to start ext drive upload.', '✕');
+    }
+}
+
+async function extStop() {
+    await fetch('/api/extdrive/stop', { method: 'POST' });
+    showToast('Stopping ext drive upload…', '⏹️');
+}
+
+async function extPause() {
+    await fetch('/api/extdrive/pause', { method: 'POST' });
+    document.getElementById('btn-ext-pause').classList.add('hidden');
+    document.getElementById('btn-ext-resume').classList.remove('hidden');
+    setExtPhaseBadge('Paused', 'yellow');
+    setExtStatusText('Upload paused — click Resume to continue.');
+}
+
+async function extResume() {
+    await fetch('/api/extdrive/resume', { method: 'POST' });
+    document.getElementById('btn-ext-pause').classList.remove('hidden');
+    document.getElementById('btn-ext-resume').classList.add('hidden');
+    setExtPhaseBadge('Uploading', 'amber');
+}
+
+async function fetchExtDriveStatus() {
+    try {
+        const res = await fetch('/api/extdrive/status');
+        const data = await res.json();
+        const badge = document.getElementById('ext-mount-badge');
+        const mp = document.getElementById('ext-mount-point');
+        if (badge) {
+            badge.textContent = data.mounted ? 'Mounted' : 'Not Mounted';
+            badge.className = data.mounted
+                ? 'ml-auto px-2.5 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full'
+                : 'ml-auto px-2.5 py-1 bg-red-100 text-red-700 text-xs font-semibold rounded-full';
+        }
+        if (mp) mp.textContent = data.mount_point || '/mnt/external_drive';
+        if (data.mounted && data.total > 0) {
+            const t = document.getElementById('ext-total');
+            const u = document.getElementById('ext-used');
+            const f = document.getElementById('ext-free');
+            const bar = document.getElementById('ext-drive-bar');
+            if (t) t.textContent = formatBytes(data.total);
+            if (u) u.textContent = formatBytes(data.used);
+            if (f) f.textContent = formatBytes(data.free);
+            const pct = (data.used / data.total * 100).toFixed(1);
+            if (bar) bar.style.width = pct + '%';
+        }
+    } catch (e) {
+        console.error('Failed to fetch ext drive status', e);
+    }
+}
+
+async function fetchExtDriveHistory() {
+    try {
+        const res = await fetch('/api/extdrive/runs');
+        const runs = await res.json();
+        const tbody = document.getElementById('ext-history-body');
+        if (!tbody) return;
+        if (!runs || runs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="p-8 text-center text-gray-400">No sessions yet.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = '';
+        runs.forEach(run => {
+            const statusColor = run.overall_status === 'completed'
+                ? 'bg-green-100 text-green-800'
+                : run.overall_status === 'completed_with_errors'
+                    ? 'bg-yellow-100 text-yellow-800'
+                    : run.overall_status === 'stopped' || run.overall_status === 'interrupted'
+                        ? 'bg-gray-100 text-gray-600'
+                        : run.overall_status === 'failed'
+                            ? 'bg-red-100 text-red-700'
+                            : run.overall_status === 'running'
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-gray-100 text-gray-400';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="p-4 text-gray-500">#${run.id}</td>
+                <td class="p-4 text-gray-600">${formatDateTime(run.start_time)}</td>
+                <td class="p-4 font-semibold text-gray-700">${(run.total_files || 0).toLocaleString()}</td>
+                <td class="p-4 font-semibold text-green-700">${(run.uploaded_files || 0).toLocaleString()}</td>
+                <td class="p-4 font-semibold text-red-600">${(run.failed_files || 0).toLocaleString()}</td>
+                <td class="p-4 font-semibold text-gray-500">${(run.skipped_files || 0).toLocaleString()}</td>
+                <td class="p-4">
+                    <span class="px-2 py-1 text-xs font-semibold rounded-full ${statusColor}">
+                        ${run.overall_status}
+                    </span>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) {
+        console.error('Failed to fetch ext drive history', e);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ext drive UI helpers
+// ---------------------------------------------------------------------------
+
+function updateExtRing(done, total) {
+    const circumference = 314;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    const offset = circumference - (pct / 100) * circumference;
+    const ring = document.getElementById('ext-ring');
+    const pctEl = document.getElementById('ext-pct');
+    const countEl = document.getElementById('ext-count');
+    if (ring) ring.style.strokeDashoffset = offset;
+    if (pctEl) pctEl.textContent = pct + '%';
+    if (countEl) countEl.textContent = `${done.toLocaleString()} / ${total.toLocaleString()} files`;
+}
+
+function setExtPhaseBadge(label, color = 'gray') {
+    const el = document.getElementById('ext-phase-badge');
+    if (!el) return;
+    const colorMap = {
+        amber:  'px-2.5 py-1 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full',
+        green:  'px-2.5 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full',
+        red:    'px-2.5 py-1 bg-red-100 text-red-700 text-xs font-semibold rounded-full',
+        yellow: 'px-2.5 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full',
+        gray:   'px-2.5 py-1 bg-gray-100 text-gray-500 text-xs font-semibold rounded-full',
+    };
+    el.className = colorMap[color] || colorMap.gray;
+    el.textContent = label;
+}
+
+function setExtStatusText(text) {
+    const el = document.getElementById('ext-status-text');
+    if (el) el.textContent = text;
+}
+
+function setExtSpeed(value) {
+    const el = document.getElementById('ext-speed');
+    if (!el) return;
+    el.textContent = (value === '—' || !value) ? '— MB/s' : `${value} MB/s`;
+}
+
+function setExtNavBadge(active) {
+    const badge = document.getElementById('ext-nav-badge');
+    if (!badge) return;
+    if (active) {
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+}
+
+/**
+ * Show/hide ext drive control buttons.
+ * @param {boolean} active   - true = upload is running or paused
+ * @param {boolean} paused   - true = currently paused (show Resume, hide Pause)
+ */
+function showExtControls(active, paused) {
+    const uploadBtn  = document.getElementById('btn-ext-upload');
+    const pauseBtn   = document.getElementById('btn-ext-pause');
+    const resumeBtn  = document.getElementById('btn-ext-resume');
+    const stopBtn    = document.getElementById('btn-ext-stop');
+
+    if (active) {
+        if (uploadBtn)  uploadBtn.classList.add('hidden');
+        if (stopBtn)    stopBtn.classList.remove('hidden');
+        if (paused) {
+            if (pauseBtn)   pauseBtn.classList.add('hidden');
+            if (resumeBtn)  resumeBtn.classList.remove('hidden');
+        } else {
+            if (pauseBtn)   pauseBtn.classList.remove('hidden');
+            if (resumeBtn)  resumeBtn.classList.add('hidden');
+        }
+    } else {
+        if (uploadBtn)  uploadBtn.classList.remove('hidden');
+        if (pauseBtn)   pauseBtn.classList.add('hidden');
+        if (resumeBtn)  resumeBtn.classList.add('hidden');
+        if (stopBtn)    stopBtn.classList.add('hidden');
+    }
+}
+
+function addExtFileRow(filename, fullpath, status) {
+    const list = document.getElementById('ext-files');
+    if (!list) return;
+
+    const emptyMsg = document.getElementById('ext-files-empty');
+    if (emptyMsg) emptyMsg.classList.add('hidden');
+
+    // Update existing row if present
+    const key = CSS.escape(fullpath || filename);
+    const existing = list.querySelector(`[data-file="${key}"]`);
+    if (existing) {
+        const chip = existing.querySelector('.ext-status-chip');
+        if (chip) chip.innerHTML = extStatusChip(status);
+        return;
+    }
+
+    const li = document.createElement('li');
+    li.setAttribute('data-file', fullpath || filename);
+    li.className = 'flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0 file-row-new';
+    li.innerHTML = `
+        ${fileIcon(filename)}
+        <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-gray-700 truncate">${escapeHtml(filename)}</p>
+            <span class="ext-status-chip">${extStatusChip(status)}</span>
+        </div>
+    `;
+    list.insertBefore(li, list.firstChild);
+
+    // Cap list at 60 rows to avoid DOM bloat
+    while (list.children.length > 60) {
+        list.removeChild(list.lastChild);
+    }
+}
+
+function extStatusChip(status) {
+    const map = {
+        uploading:               '<span class="text-xs font-medium text-amber-500 pulse-dot">(Uploading…)</span>',
+        uploaded:                '<span class="text-xs font-medium text-green-600">✓ Uploaded</span>',
+        already_in_photos:       '<span class="text-xs font-medium text-sky-500">☁ Already in Photos</span>',
+        skipped:                 '<span class="text-xs font-medium text-gray-400">— Skipped</span>',
+        skipped_already_uploaded:'<span class="text-xs font-medium text-gray-400">— Previously uploaded</span>',
+        failed:                  '<span class="text-xs font-medium text-red-500">⚠ Failed</span>',
+    };
+    return map[status] || '<span class="text-xs font-medium text-gray-400">(Queued)</span>';
+}
+

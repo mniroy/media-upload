@@ -53,4 +53,29 @@ class FileRecord(Base):
     upload_status = Column(String, default="pending")
     error_message = Column(String, nullable=True)
 
+# ---------------------------------------------------------------------------
+# External Drive tables — completely separate from USB run/file tracking
+# ---------------------------------------------------------------------------
+
+class ExtDriveRun(Base):
+    """One upload session from the permanently-mounted external HDD."""
+    __tablename__ = "ext_drive_runs"
+    id = Column(Integer, primary_key=True, index=True)
+    start_time = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    end_time = Column(DateTime, nullable=True)
+    overall_status = Column(String, default="running")  # running | completed | failed | stopped
+    total_files = Column(Integer, default=0)
+    uploaded_files = Column(Integer, default=0)
+    failed_files = Column(Integer, default=0)
+    skipped_files = Column(Integer, default=0)
+
+class ExtDriveFile(Base):
+    """Per-file record for an external drive upload session."""
+    __tablename__ = "ext_drive_files"
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(Integer, index=True)
+    filepath = Column(String)   # full absolute path on the external drive
+    upload_status = Column(String, default="pending")  # pending | success | failed | skipped
+    error_message = Column(String, nullable=True)
+
 Base.metadata.create_all(bind=engine)

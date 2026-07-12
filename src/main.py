@@ -12,6 +12,10 @@ from src.usb_handler import (
     copy_stop, copy_resume, copy_pause, upload_stop, upload_resume,
     MOUNT_BASE
 )
+from src.ext_drive_handler import (
+    get_ext_drive_status, scan_top_level_folders, start_ext_drive_upload,
+    ext_stop, ext_pause, ext_resume,
+)
 
 main_loop = None
 
@@ -34,6 +38,14 @@ _live_state = {
     "auto_upload_seconds": 30,
     "error": None,
     "auto_copy_enabled": True,
+    # --- External Drive (separate workflow) ---
+    "ext_phase": "idle",       # idle | scanning | uploading | upload_paused | completed | failed | stopped
+    "ext_run_id": None,
+    "ext_current_file": None,
+    "ext_upload_current": 0,
+    "ext_upload_total": 0,
+    "ext_speed_mbps": None,
+    "ext_error": None,
 }
 
 @asynccontextmanager
@@ -48,6 +60,20 @@ async def lifespan(app: FastAPI):
     _live_state["auto_copy_enabled"] = setting.value != "false" if setting else True
     db.close()
     
+    # Clean up any ext drive sessions left as "running" from a previous
+    # service crash or restart — they will never complete now.
+    db2 = SessionLocal()
+    from src.database import ExtDriveRun as _EDR
+    import datetime as _dt
+    stale = db2.query(_EDR).filter(_EDR.overall_status == "running").all()
+    for s in stale:
+        s.overall_status = "interrupted"
+        s.end_time = _dt.datetime.now(_dt.timezone.utc)
+    if stale:
+        db2.commit()
+        print(f"[startup] Marked {len(stale)} stale ext drive session(s) as 'interrupted'")
+    db2.close()
+
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -278,6 +304,87 @@ def get_storage():
     return {"total": total, "used": used, "free": free}
 
 # ---------------------------------------------------------------------------
+# External Drive — completely separate from USB workflow
+# ---------------------------------------------------------------------------
+
+@app.get("/api/extdrive/status")
+def extdrive_status():
+    """Mount status + disk usage of the permanently attached external HDD."""
+    return get_ext_drive_status()
+
+@app.get("/api/extdrive/folders")
+def extdrive_folders():
+    """List top-level folders/files on the external drive (non-recursive, fast)."""
+    return scan_top_level_folders()
+
+@app.post("/api/extdrive/upload")
+async def extdrive_start_upload(background_tasks: BackgroundTasks):
+    """Start a full-drive upload session (streams all media to Google Photos)."""
+    if _live_state.get("ext_phase") in ("scanning", "uploading"):
+        return {"status": "already_running"}
+    background_tasks.add_task(start_ext_drive_upload)
+    return {"status": "started"}
+
+@app.post("/api/extdrive/stop")
+def extdrive_stop():
+    ext_stop()
+    return {"status": "stopping"}
+
+@app.post("/api/extdrive/pause")
+def extdrive_pause():
+    ext_pause()
+    return {"status": "paused"}
+
+@app.post("/api/extdrive/resume")
+def extdrive_resume_upload():
+    ext_resume()
+    return {"status": "resumed"}
+
+@app.get("/api/extdrive/runs")
+def extdrive_runs():
+    """List all past external drive upload sessions."""
+    from src.database import ExtDriveRun as EDR
+    db = SessionLocal()
+    runs = db.query(EDR).order_by(EDR.id.desc()).all()
+    result = [
+        {
+            "id": r.id,
+            "start_time": r.start_time,
+            "end_time": r.end_time,
+            "overall_status": r.overall_status,
+            "total_files": r.total_files,
+            "uploaded_files": r.uploaded_files,
+            "failed_files": r.failed_files,
+            "skipped_files": r.skipped_files,
+        }
+        for r in runs
+    ]
+    db.close()
+    return result
+
+@app.get("/api/extdrive/runs/{run_id}/files")
+def extdrive_run_files(run_id: int, status: Optional[str] = None, limit: int = 200, offset: int = 0):
+    """Files for an ext drive run, with optional status filter and pagination."""
+    from src.database import ExtDriveFile as EDF
+    db = SessionLocal()
+    q = db.query(EDF).filter(EDF.run_id == run_id)
+    if status:
+        q = q.filter(EDF.upload_status == status)
+    files = q.order_by(EDF.id).offset(offset).limit(limit).all()
+    result = [
+        {
+            "id": f.id,
+            "filepath": f.filepath,
+            "filename": f.filepath.split("/")[-1] if f.filepath else "",
+            "upload_status": f.upload_status,
+            "error_message": f.error_message,
+        }
+        for f in files
+    ]
+    db.close()
+    return result
+
+# ---------------------------------------------------------------------------
 # System Controls
 # ---------------------------------------------------------------------------
 
@@ -410,6 +517,40 @@ def _update_state(event_type: str, data: dict):
             s["error"] = data["error"]
     elif event_type == "auto_copy_toggled":
         s["auto_copy_enabled"] = data.get("enabled", True)
+    # --- External Drive events ---
+    elif event_type == "ext_run_started":
+        s["ext_phase"] = "scanning"
+        s["ext_run_id"] = data.get("run_id")
+        s["ext_upload_current"] = 0
+        s["ext_upload_total"] = 0
+        s["ext_current_file"] = None
+        s["ext_speed_mbps"] = None
+        s["ext_error"] = None
+    elif event_type == "ext_scan_done":
+        s["ext_phase"] = "scanning"
+        s["ext_upload_total"] = data.get("total", 0)
+    elif event_type == "ext_upload_started":
+        s["ext_phase"] = "uploading"
+        s["ext_upload_total"] = data.get("total", 0)
+    elif event_type == "ext_upload_progress":
+        s["ext_phase"] = "uploading"
+        s["ext_current_file"] = data.get("filename") or data.get("filepath", "")
+        s["ext_upload_current"] = data.get("current", 0)
+        s["ext_upload_total"] = data.get("total", 0)
+    elif event_type == "ext_upload_speed":
+        s["ext_speed_mbps"] = data.get("speed_mbps")
+    elif event_type == "ext_upload_stopped":
+        s["ext_phase"] = "upload_paused"
+    elif event_type == "ext_upload_done":
+        s["ext_phase"] = "upload_done"
+        s["ext_current_file"] = None
+        s["ext_speed_mbps"] = None
+    elif event_type == "ext_run_completed":
+        s["ext_phase"] = "completed" if not data.get("error") else "failed"
+        s["ext_current_file"] = None
+        s["ext_speed_mbps"] = None
+        if data.get("error"):
+            s["ext_error"] = data["error"]
 
 async def broadcast_event(event_type: str, data: dict):
     _update_state(event_type, data)
