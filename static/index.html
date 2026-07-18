@@ -4,543 +4,546 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Media Upload Hub</title>
-    <meta name="description" content="Automatic USB media capture and Google Photos upload hub for Linux.">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="/static/style.css">
-    <style>
-        /* Toast notification */
-        #toast {
-            transition: opacity 0.4s ease, transform 0.4s ease;
-        }
-        #toast.hide {
-            opacity: 0;
-            transform: translateY(12px);
-            pointer-events: none;
-        }
-
-        /* Upload speed counter animation */
-        #upload-speed {
-            transition: color 0.3s ease;
-        }
-
-        /* Folder modal scroll */
-        #folder-list {
-            max-height: 320px;
-            overflow-y: auto;
-        }
-
-        /* Countdown ring */
-        #countdown-ring {
-            transition: stroke-dashoffset 1s linear;
-        }
-
-        /* Pulse dot for live status */
-        @keyframes pulse-dot {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-        .pulse-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
-
-        /* Copy progress file pulse */
-        @keyframes copy-slide {
-            from { opacity: 0; transform: translateX(-6px); }
-            to   { opacity: 1; transform: translateX(0); }
-        }
-        .file-row-new { animation: copy-slide 0.25s ease; }
-    </style>
+    <meta name="description" content="Dual-mode media upload hub: USB copy+upload and external drive network upload station for Google Photos.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=5">
 </head>
-<body class="bg-gray-50 text-gray-800 font-sans h-screen flex overflow-hidden">
+<body>
 
-    <!-- =====================================================================
-         FOLDER SELECTION MODAL
-         Appears after USB copy finishes. User picks which folders to upload.
-    ===================================================================== -->
-    <div id="folder-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm hidden">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 relative">
-            <h2 class="text-xl font-bold text-gray-900 mb-1">USB Copy Complete</h2>
-            <p class="text-sm text-gray-500 mb-4">Select which folders to upload to Google Photos. Auto-upload starts in <strong id="countdown-label">30</strong>s.</p>
-
-            <!-- Countdown ring + timer -->
-            <div class="flex items-center gap-4 mb-5">
-                <div class="relative w-14 h-14 flex-shrink-0">
-                    <svg class="w-full h-full -rotate-90" viewBox="0 0 48 48">
-                        <circle cx="24" cy="24" r="20" fill="none" stroke="#e5e7eb" stroke-width="4"/>
-                        <circle id="countdown-ring" cx="24" cy="24" r="20" fill="none" stroke="#3b82f6" stroke-width="4"
+    <!-- FOLDER SELECTION MODAL -->
+    <div id="folder-modal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <h2 class="modal-title">USB Copy Complete</h2>
+            <p class="modal-subtitle">Select folders to upload to Google Photos. Auto-upload starts in <strong id="countdown-label">30</strong>s.</p>
+            <div class="modal-actions">
+                <div class="countdown-ring-wrap">
+                    <svg class="countdown-svg" viewBox="0 0 48 48">
+                        <circle cx="24" cy="24" r="20" fill="none" stroke="#e8e5e0" stroke-width="4"/>
+                        <circle id="countdown-ring" cx="24" cy="24" r="20" fill="none" stroke="#3d6b9e" stroke-width="4"
                             stroke-linecap="round" stroke-dasharray="125.66" stroke-dashoffset="0"/>
                     </svg>
-                    <span id="countdown-sec" class="absolute inset-0 flex items-center justify-center text-xs font-bold text-blue-600">30</span>
+                    <span id="countdown-sec" class="countdown-sec-label">30</span>
                 </div>
-                <div class="flex gap-2 flex-wrap">
-                    <button id="modal-upload-all" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-                        Upload All
-                    </button>
-                    <button id="modal-upload-selected" class="bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-                        Upload Selected
-                    </button>
-                    <button id="modal-cancel" class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-                        Skip Upload
-                    </button>
+                <div class="modal-btn-group">
+                    <button id="modal-upload-all" class="btn btn-primary">Upload All</button>
+                    <button id="modal-upload-selected" class="btn btn-secondary">Upload Selected</button>
+                    <button id="modal-cancel" class="btn btn-ghost">Skip</button>
                 </div>
             </div>
-
-            <!-- Folder list -->
-            <div id="folder-list" class="divide-y border rounded-xl overflow-hidden">
-                <!-- populated by JS -->
-            </div>
-
-            <p id="folder-none" class="text-sm text-gray-400 text-center py-4 hidden">No folders found in this session.</p>
+            <div id="folder-list" class="folder-list"></div>
+            <p id="folder-none" class="folder-none hidden">No folders found in this session.</p>
         </div>
     </div>
 
-    <!-- =====================================================================
-         TOAST NOTIFICATION
-    ===================================================================== -->
-    <div id="toast" class="hide fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-gray-900 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-xl max-w-xs">
-        <span id="toast-icon" class="text-lg">✓</span>
+    <!-- TOAST -->
+    <div id="toast" class="toast hide">
+        <span id="toast-icon">✓</span>
         <span id="toast-msg">Saved</span>
     </div>
 
-    <!-- =====================================================================
-         SIDEBAR
-    ===================================================================== -->
-    <aside class="w-64 bg-white border-r flex flex-col shadow-sm">
-        <div class="p-6 border-b flex justify-between items-center">
-            <h1 class="text-xl font-bold text-blue-600">Media Hub</h1>
-            <span id="sidebar-service-badge" class="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full">Active</span>
-        </div>
-        <nav class="flex-1 p-4 space-y-2">
-            <a id="tab-live" class="nav-item flex items-center p-3 text-blue-700 bg-blue-50 rounded-lg cursor-pointer transition-colors">
-                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
-                Dashboard
-            </a>
-            <a id="tab-files" class="nav-item flex items-center p-3 text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg cursor-pointer transition-colors">
-                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
-                File Explorer
-            </a>
-            <a id="tab-history" class="nav-item flex items-center p-3 text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg cursor-pointer transition-colors">
-                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                History
-            </a>
-            <a id="tab-settings" class="nav-item flex items-center p-3 text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg cursor-pointer transition-colors">
-                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                Settings
-            </a>
-            <!-- External Drive tab (separate from USB workflow) -->
-            <a id="tab-extdrive" class="nav-item flex items-center p-3 text-gray-600 hover:bg-amber-50 hover:text-amber-700 rounded-lg cursor-pointer transition-colors">
-                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/><circle cx="12" cy="12" r="2" stroke-width="2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v1M12 15v1M8 12h1M15 12h1"/></svg>
-                Ext Drive
-                <span id="ext-nav-badge" class="ml-auto hidden px-1.5 py-0.5 bg-amber-500 text-white text-xs font-bold rounded-full">●</span>
-            </a>
-        </nav>
-        <div class="p-4 border-t bg-gray-50">
-            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Storage</h3>
-            <div class="space-y-2">
-                <div class="flex justify-between text-sm">
-                    <span class="text-gray-600">Used</span>
-                    <span id="storage-used" class="font-medium">0 GB</span>
+    <!-- APP SHELL -->
+    <div class="app-shell">
+
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-mark">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
                 </div>
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                    <div id="storage-bar" class="bg-blue-600 h-2 rounded-full" style="width: 0%"></div>
-                </div>
-                <div class="flex justify-between text-xs text-gray-500">
-                    <span id="storage-free">0 GB free</span>
-                    <span id="storage-total">0 GB total</span>
+                <div class="logo-text">
+                    <span class="logo-name">Media Hub</span>
+                    <span class="logo-sub">Upload Station</span>
                 </div>
             </div>
-        </div>
-    </aside>
 
-    <!-- =====================================================================
-         MAIN CONTENT
-    ===================================================================== -->
-    <main class="flex-1 overflow-y-auto bg-gray-50 p-8">
-
-        <!-- ===================== DASHBOARD ============================= -->
-        <div id="view-live" class="view-section block">
-            <div class="flex justify-between items-center mb-6">
-                <div class="flex items-center gap-3">
-                    <h2 class="text-2xl font-bold">Dashboard</h2>
-                    <span id="dashboard-service-badge" class="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">Auto-Copy Active</span>
-                </div>
-                <button id="btn-upload-staged" onclick="triggerLocalUpload()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg text-sm transition-colors shadow-sm">
-                    Upload Staged Files
-                </button>
-            </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-                <!-- Local Copy Status -->
-                <div class="bg-white rounded-2xl shadow-sm border p-6 flex flex-col">
-                    <div class="flex items-center justify-between mb-3">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-                                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
-                            </div>
-                            <h3 class="text-base font-semibold text-gray-800">Local Copy Status</h3>
-                        </div>
-                        <span id="copy-badge" class="px-2.5 py-1 bg-gray-100 text-gray-500 text-xs font-semibold rounded-full">Idle</span>
+            <nav class="sidebar-nav">
+                <div class="nav-section-label">Stations</div>
+                <a id="tab-usb" class="nav-item nav-active" data-tab="usb">
+                    <div class="nav-icon nav-icon-usb">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10 3H6a2 2 0 00-2 2v14c0 1.1.9 2 2 2h12a2 2 0 002-2V8l-5-5H10z"/>
+                            <path d="M14 3v5h5"/>
+                        </svg>
                     </div>
+                    <div class="nav-label">
+                        <span class="nav-title">USB Station</span>
+                        <span class="nav-sub">Copy &amp; Upload</span>
+                    </div>
+                    <span id="usb-nav-badge" class="nav-badge hidden"></span>
+                </a>
+                <a id="tab-extdrive" class="nav-item" data-tab="extdrive">
+                    <div class="nav-icon nav-icon-ext">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="3" width="20" height="14" rx="2"/>
+                            <path d="M8 21h8M12 17v4"/>
+                        </svg>
+                    </div>
+                    <div class="nav-label">
+                        <span class="nav-title">Drive Station</span>
+                        <span class="nav-sub">Network Upload</span>
+                    </div>
+                    <span id="ext-nav-badge" class="nav-badge hidden"></span>
+                </a>
 
-                    <!-- USB Disk Info Bar (hidden until USB inserted) -->
-                    <div id="usb-info-bar" class="hidden mb-3 p-3 bg-blue-50 rounded-xl text-xs text-gray-600 space-y-1">
-                        <div class="flex items-center justify-between font-semibold text-blue-700">
-                            <span id="usb-info-device">USB Disk</span>
-                            <div class="flex gap-2">
-                                <span id="usb-mount-badge" class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full">Mounted</span>
-                                <button id="btn-unmount" onclick="unmountUSB()" class="px-2 py-0.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-full transition-colors cursor-pointer">
-                                    Unmount
+                <div class="nav-divider"></div>
+                <div class="nav-section-label">Tools</div>
+
+                <a id="tab-files" class="nav-item" data-tab="files">
+                    <div class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                        </svg>
+                    </div>
+                    <div class="nav-label"><span class="nav-title">File Explorer</span></div>
+                </a>
+                <a id="tab-history" class="nav-item" data-tab="history">
+                    <div class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                    </div>
+                    <div class="nav-label"><span class="nav-title">History</span></div>
+                </a>
+                <a id="tab-settings" class="nav-item" data-tab="settings">
+                    <div class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+                        </svg>
+                    </div>
+                    <div class="nav-label"><span class="nav-title">Settings</span></div>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="storage-widget">
+                    <div class="storage-header">
+                        <span class="storage-label">Internal</span>
+                        <span id="storage-used" class="storage-used">—</span>
+                    </div>
+                    <div class="storage-track">
+                        <div id="storage-bar" class="storage-fill" style="width:0%"></div>
+                    </div>
+                    <div class="storage-details">
+                        <span id="storage-free">— free</span>
+                        <span id="storage-total">— total</span>
+                    </div>
+                </div>
+                <div class="storage-widget storage-widget-ext" id="ext-storage-widget">
+                    <div class="storage-header">
+                        <span class="storage-label storage-label-ext">Ext Drive</span>
+                        <span id="ext-storage-used" class="storage-used">—</span>
+                    </div>
+                    <div class="storage-track">
+                        <div id="ext-storage-bar" class="storage-fill storage-fill-ext" style="width:0%"></div>
+                    </div>
+                    <div class="storage-details">
+                        <span id="ext-storage-free">— free</span>
+                        <span id="ext-storage-total">— total</span>
+                    </div>
+                    <span id="ext-storage-mount-badge" class="ext-mount-inline">checking&hellip;</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="main-content">
+
+            <!-- ====== USB STATION ====== -->
+            <div id="view-usb" class="view-section active">
+                <div class="view-header">
+                    <div class="view-header-left">
+                        <div class="station-icon station-icon-usb">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M10 3H6a2 2 0 00-2 2v14c0 1.1.9 2 2 2h12a2 2 0 002-2V8l-5-5H10z"/>
+                                <path d="M14 3v5h5"/>
+                                <path d="M9 11h6M9 15h4"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 class="view-title">USB Station</h1>
+                            <p class="view-subtitle">Auto-detects USB &middot; Copies locally &middot; Uploads to Google Photos</p>
+                        </div>
+                    </div>
+                    <div class="view-header-right">
+                        <span id="dashboard-service-badge" class="badge badge-green">
+                            Auto-Copy Active
+                        </span>
+                        <button id="btn-upload-staged" onclick="triggerLocalUpload()" class="btn">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            Upload Staged
+                        </button>
+                    </div>
+                </div>
+
+                <div class="dual-panel">
+                    <!-- Local Copy Card -->
+                    <div class="station-card">
+                        <div class="card-header">
+                            <div class="card-header-left">
+                                <div class="card-icon-sm icon-blue">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                        <rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/>
+                                    </svg>
+                                </div>
+                                <span class="card-title">Local Copy</span>
+                            </div>
+                            <span id="copy-badge" class="badge-corner">Idle</span>
+                        </div>
+
+                        <!-- USB Info Bar -->
+                        <div id="usb-info-bar" class="usb-info-bar hidden">
+                            <div class="usb-info-header">
+                                <span id="usb-info-device" class="usb-device-name">USB Disk</span>
+                                <div class="usb-actions">
+                                    <span id="usb-mount-badge" class="badge-corner">Mounted</span>
+                                    <button id="btn-unmount" onclick="unmountUSB()" class="btn-xs">Unmount</button>
+                                </div>
+                            </div>
+                            <div class="usb-stats">
+                                <span>Total: <strong id="usb-total">—</strong></span>
+                                <span>Used: <strong id="usb-used">—</strong></span>
+                                <span>Free: <strong id="usb-free">—</strong></span>
+                            </div>
+                            <div class="mini-track"><div id="usb-bar" class="mini-fill fill-blue" style="width:0%"></div></div>
+                        </div>
+
+                        <!-- Stat hero -->
+                        <div class="stat-hero">
+                            <div class="stat-value" id="copy-pct-hero">0<span class="stat-unit">%</span></div>
+                            <div class="stat-label">of files copied locally</div>
+                            <div class="stat-change neutral" id="copy-count">0 / 0 files</div>
+                        </div>
+
+                        <!-- Segmented progress bar -->
+                        <div class="seg-bar-wrap">
+                            <div class="seg-bar">
+                                <div class="seg-piece seg-usb" id="copy-seg-done" style="width:0%"></div>
+                                <div class="seg-piece seg-gray" id="copy-seg-rem"  style="width:100%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Hidden ring for JS compat -->
+                        <svg style="display:none"><circle id="copy-ring"/></svg>
+                        <span id="copy-pct" style="display:none">0%</span>
+
+                        <p id="local-status" class="card-status">Waiting for USB insertion&hellip;</p>
+
+                        <div id="copy-controls" class="ctrl-row hidden">
+                            <div class="btn-group">
+                                <button id="btn-copy-pause-resume" onclick="copyTogglePauseResume()" class="ctrl-btn ctrl-yellow">
+                                    <span id="copy-pause-text">⏸ Pause</span>
                                 </button>
+                                <button id="btn-copy-stop" onclick="copyStop()" class="ctrl-btn ctrl-red">&#10005; Stop</button>
                             </div>
                         </div>
-                        <div class="flex gap-4">
-                            <span>Total: <strong id="usb-total">—</strong></span>
-                            <span>Used: <strong id="usb-used">—</strong></span>
-                            <span>Free: <strong id="usb-free">—</strong></span>
-                        </div>
-                        <div class="w-full bg-blue-200 rounded-full h-1.5 mt-1">
-                            <div id="usb-bar" class="bg-blue-500 h-1.5 rounded-full" style="width:0%"></div>
+
+                        <div class="file-feed">
+                            <p class="file-feed-label">Recent Files</p>
+                            <ul id="local-files" class="file-list"></ul>
                         </div>
                     </div>
 
-                    <!-- Ring Chart -->
-                    <div class="flex items-center justify-center my-2">
-                        <div class="relative w-44 h-44">
-                            <svg class="w-full h-full -rotate-90" viewBox="0 0 120 120">
-                                <circle cx="60" cy="60" r="50" fill="none" stroke="#e5e7eb" stroke-width="10"/>
-                                <circle id="copy-ring" cx="60" cy="60" r="50" fill="none" stroke="#3b82f6" stroke-width="10"
-                                    stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="314"
-                                    style="transition: stroke-dashoffset 0.6s ease"/>
-                            </svg>
-                            <div class="absolute inset-0 flex flex-col items-center justify-center">
-                                <span id="copy-pct" class="text-3xl font-bold text-gray-800">0%</span>
-                                <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Complete</span>
-                                <span id="copy-count" class="text-xs text-gray-400 mt-1">0 / 0 files</span>
+                    <!-- Cloud Upload Card -->
+                    <div class="station-card">
+                        <div class="card-header">
+                            <div class="card-header-left">
+                                <div class="card-icon-sm icon-purple">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                        <path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/>
+                                    </svg>
+                                </div>
+                                <span class="card-title">Cloud Upload</span>
+                            </div>
+                            <span id="upload-badge" class="badge-corner">Idle</span>
+                        </div>
+
+                        <!-- Stat hero -->
+                        <div class="stat-hero">
+                            <div class="stat-value" id="upload-pct-hero">0<span class="stat-unit">%</span></div>
+                            <div class="stat-label">uploaded to Google Photos</div>
+                            <div class="stat-change neutral">
+                                <span id="upload-count">0 / 0 files</span>
+                                &nbsp;&middot;&nbsp;
+                                <span id="upload-speed">— MB/s</span>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Status text -->
-                    <p id="local-status" class="text-sm text-gray-400 text-center mb-3">Waiting for USB insertion...</p>
+                        <!-- Segmented progress bar -->
+                        <div class="seg-bar-wrap">
+                            <div class="seg-bar">
+                                <div class="seg-piece seg-cloud" id="upload-seg-done" style="width:0%"></div>
+                                <div class="seg-piece seg-gray"  id="upload-seg-rem"  style="width:100%"></div>
+                            </div>
+                        </div>
 
-                    <!-- Stop / Resume copy buttons -->
-                    <div id="copy-controls" class="hidden flex gap-2 justify-center mb-3">
-                        <button id="btn-copy-pause" onclick="copyPause()" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-yellow-100 hover:bg-yellow-200 text-yellow-800 transition-colors">
-                            ⏸ Pause Copy
-                        </button>
-                        <button id="btn-copy-resume" onclick="copyResume()" class="hidden text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-100 hover:bg-green-200 text-green-800 transition-colors">
-                            ▶ Resume Copy
-                        </button>
-                        <button id="btn-copy-stop" onclick="copyStop()" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 transition-colors">
-                            ✕ Stop Copy
-                        </button>
-                    </div>
+                        <!-- Hidden ring for JS compat -->
+                        <svg style="display:none"><circle id="upload-ring"/></svg>
+                        <span id="upload-pct" style="display:none">0%</span>
 
-                    <!-- File List -->
-                    <div class="mt-2">
-                        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Recent Files</p>
-                        <ul id="local-files" class="space-y-2 max-h-52 overflow-y-auto pr-1"></ul>
+                        <p id="cloud-status" class="card-status">Waiting for files&hellip;</p>
+
+                        <div id="upload-controls" class="ctrl-row hidden">
+                            <button id="btn-upload-stop" onclick="uploadStop()" class="ctrl-btn ctrl-red">&#10005; Stop Upload</button>
+                        </div>
+
+                        <div class="file-feed">
+                            <p class="file-feed-label">Recent Uploads</p>
+                            <ul id="cloud-files" class="file-list"></ul>
+                        </div>
                     </div>
                 </div>
-
-                <!-- Cloud Upload Status -->
-                <div class="bg-white rounded-2xl shadow-sm border p-6 flex flex-col">
-                    <div class="flex items-center justify-between mb-5">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
-                                <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                            </div>
-                            <h3 class="text-base font-semibold text-gray-800">Cloud Upload Status</h3>
-                        </div>
-                        <span id="upload-badge" class="px-2.5 py-1 bg-gray-100 text-gray-500 text-xs font-semibold rounded-full">Idle</span>
-                    </div>
-
-                    <!-- Ring Chart -->
-                    <div class="flex items-center justify-center my-2">
-                        <div class="relative w-44 h-44">
-                            <svg class="w-full h-full -rotate-90" viewBox="0 0 120 120">
-                                <circle cx="60" cy="60" r="50" fill="none" stroke="#e5e7eb" stroke-width="10"/>
-                                <circle id="upload-ring" cx="60" cy="60" r="50" fill="none" stroke="#9333ea" stroke-width="10"
-                                    stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="314"
-                                    style="transition: stroke-dashoffset 0.6s ease"/>
-                            </svg>
-                            <div class="absolute inset-0 flex flex-col items-center justify-center">
-                                <span id="upload-pct" class="text-3xl font-bold text-gray-800">0%</span>
-                                <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Uploaded</span>
-                                <span id="upload-count" class="text-xs text-gray-400 mt-1">0 / 0 files</span>
-                                <span id="upload-speed" class="text-xs text-purple-600 font-bold mt-1">— MB/s</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Currently uploading -->
-                    <p id="cloud-status" class="text-sm text-gray-400 text-center mb-3">Waiting for files...</p>
-
-                    <!-- Upload stop/resume buttons -->
-                    <div id="upload-controls" class="hidden flex gap-2 justify-center mb-3">
-                        <button id="btn-upload-stop" onclick="uploadStop()" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 transition-colors">
-                            ✕ Stop Upload
-                        </button>
-                    </div>
-
-                    <!-- File List -->
-                    <div class="mt-2">
-                        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Recent Uploads</p>
-                        <ul id="cloud-files" class="space-y-2 max-h-52 overflow-y-auto pr-1"></ul>
-                    </div>
-                </div>
-
             </div>
-        </div>
 
-
-        <!-- ===================== FILE EXPLORER ========================= -->
-        <div id="view-files" class="view-section hidden">
-            <h2 class="text-2xl font-bold mb-6">File Explorer</h2>
-            <div class="bg-white rounded-xl shadow-sm border">
-                <div class="p-4 border-b flex justify-between items-center">
-                    <span class="text-gray-600 text-sm">/var/lib/media_upload/staging</span>
-                    <button onclick="fetchFiles()" class="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded border">Refresh</button>
+            <!-- ====== DRIVE STATION ====== -->
+            <div id="view-extdrive" class="view-section hidden">
+                <div class="view-header">
+                    <div class="view-header-left">
+                        <div class="station-icon station-icon-ext">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                                <path d="M8 21h8M12 17v4"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 class="view-title">Drive Station</h1>
+                            <p class="view-subtitle">Permanent HDD &middot; Receives media via network &middot; Uploads to Google Photos</p>
+                        </div>
+                    </div>
+                    <div class="view-header-right">
+                        <span id="ext-phase-badge" class="badge badge-gray">Idle</span>
+                        <div class="btn-group">
+                            <button id="btn-ext-pause-resume" onclick="extTogglePauseResume()" class="btn hidden">
+                                <span id="ext-pause-text">&#9646;&#9646; Pause</span>
+                            </button>
+                            <button id="btn-ext-start-stop" onclick="extToggleStartStop()" class="btn">
+                                <svg id="ext-start-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                <span id="ext-start-text">Start</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <div class="p-0">
-                    <table class="w-full text-left text-sm">
-                        <thead class="bg-gray-50 border-b">
-                            <tr>
-                                <th class="p-4 font-semibold text-gray-600">Filename</th>
-                                <th class="p-4 font-semibold text-gray-600 w-32">Size</th>
-                            </tr>
-                        </thead>
-                        <tbody id="files-body" class="divide-y">
-                            <!-- Populated via JS -->
-                        </tbody>
+
+                <div class="dual-panel">
+                    <!-- Drive info + progress -->
+                    <div class="station-card">
+                        <div class="card-header">
+                            <div class="card-header-left">
+                                <div class="card-icon-sm icon-amber">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                        <rect x="2" y="3" width="20" height="14" rx="2"/>
+                                        <path d="M8 21h8M12 17v4"/>
+                                    </svg>
+                                </div>
+                                <span class="card-title">External Drive</span>
+                            </div>
+                            <span id="ext-mount-badge" class="badge-corner">Checking&hellip;</span>
+                        </div>
+
+                        <!-- Drive stats bar -->
+                        <div class="drive-stats-bar">
+                            <div id="ext-mount-point" class="drive-mount-point">/mnt/external_drive</div>
+                            <div class="drive-stats-grid">
+                                <div class="drive-stat">
+                                    <span class="stat-label-sm">Total</span>
+                                    <span id="ext-total" class="stat-val-sm">—</span>
+                                </div>
+                                <div class="drive-stat">
+                                    <span class="stat-label-sm">Used</span>
+                                    <span id="ext-used" class="stat-val-sm text-amber">—</span>
+                                </div>
+                                <div class="drive-stat">
+                                    <span class="stat-label-sm">Free</span>
+                                    <span id="ext-free" class="stat-val-sm text-green">—</span>
+                                </div>
+                            </div>
+                            <div class="mini-track"><div id="ext-drive-bar" class="mini-fill fill-amber" style="width:0%"></div></div>
+                            <button onclick="fetchExtDriveStatus()" class="refresh-link">&#8635; Refresh</button>
+                        </div>
+
+                        <!-- Stat hero -->
+                        <div class="stat-hero">
+                            <div class="stat-value" id="ext-pct-hero">0<span class="stat-unit">%</span></div>
+                            <div class="stat-label">uploaded to Google Photos</div>
+                            <div class="stat-change neutral">
+                                <span id="ext-count">0 / 0 files</span>
+                                &nbsp;&middot;&nbsp;
+                                <span id="ext-speed" class="ext-speed-text">— MB/s</span>
+                            </div>
+                        </div>
+
+                        <!-- Segmented bar -->
+                        <div class="seg-bar-wrap">
+                            <div class="seg-bar">
+                                <div class="seg-piece seg-ext"  id="ext-seg-done" style="width:0%"></div>
+                                <div class="seg-piece seg-gray" id="ext-seg-rem"  style="width:100%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Hidden ring/pct for JS compat -->
+                        <svg style="display:none"><circle id="ext-ring"/></svg>
+                        <span id="ext-pct" style="display:none">0%</span>
+
+                        <p id="ext-status-text" class="card-status">Ready — click "Start" to begin.</p>
+                    </div>
+
+                    <!-- Live feed + history -->
+                    <div class="station-card">
+                        <div class="card-header">
+                            <div class="card-header-left">
+                                <div class="card-icon-sm icon-amber">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                        <path d="M14.5 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V7.5L14.5 2z"/>
+                                        <polyline points="14 2 14 8 20 8"/>
+                                    </svg>
+                                </div>
+                                <span class="card-title">Live Feed</span>
+                            </div>
+                            <span class="badge-pulse">&#9679; Live</span>
+                        </div>
+
+                        <div class="file-feed" style="flex:1;min-height:0">
+                            <ul id="ext-files" class="file-list"></ul>
+                            <p id="ext-files-empty" class="file-empty">No files processed yet.</p>
+                        </div>
+
+                        <div class="inline-history">
+                            <div class="inline-history-header">
+                                <span class="file-feed-label" style="margin:0">Session History</span>
+                                <button onclick="fetchExtDriveHistory()" class="btn-ghost-xs">Refresh</button>
+                            </div>
+                            <div class="history-table-wrap">
+                                <table class="history-table">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Started</th>
+                                            <th>Total</th>
+                                            <th>&#10003;</th>
+                                            <th>&#10007;</th>
+                                            <th>Status</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="ext-history-body">
+                                        <tr><td colspan="7" class="history-empty">No sessions yet.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ====== FILE EXPLORER ====== -->
+            <div id="view-files" class="view-section hidden">
+                <div class="view-header">
+                    <div class="view-header-left">
+                        <h1 class="view-title">File Explorer</h1>
+                        <p class="view-subtitle">/var/lib/media_upload/staging</p>
+                    </div>
+                    <button onclick="fetchFiles()" class="btn btn-ghost">&#8635; Refresh</button>
+                </div>
+                <div class="card-plain">
+                    <table class="data-table">
+                        <thead><tr><th>Name</th><th style="width:120px">Size</th></tr></thead>
+                        <tbody id="files-body"></tbody>
                     </table>
                 </div>
             </div>
-        </div>
 
-        <!-- ===================== HISTORY =============================== -->
-        <div id="view-history" class="view-section hidden">
-            <h2 class="text-2xl font-bold mb-6">Upload History</h2>
-            <div class="bg-white rounded-xl shadow-sm border">
-                <div class="p-4 border-b flex justify-end">
-                    <button onclick="fetchHistory()" class="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded border">Refresh</button>
+            <!-- ====== HISTORY ====== -->
+            <div id="view-history" class="view-section hidden">
+                <div class="view-header">
+                    <div class="view-header-left">
+                        <h1 class="view-title">Upload History</h1>
+                        <p class="view-subtitle">USB copy &amp; upload sessions</p>
+                    </div>
+                    <button onclick="fetchHistory()" class="btn btn-ghost">&#8635; Refresh</button>
                 </div>
-                <table class="w-full text-left text-sm">
-                    <thead class="bg-gray-50 border-b">
-                        <tr>
-                            <th class="p-4 font-semibold text-gray-600">ID</th>
-                            <th class="p-4 font-semibold text-gray-600">Device / Source</th>
-                            <th class="p-4 font-semibold text-gray-600">Start Time</th>
-                            <th class="p-4 font-semibold text-gray-600">Copy (Local)</th>
-                            <th class="p-4 font-semibold text-gray-600">Upload (Cloud)</th>
-                            <th class="p-4 font-semibold text-gray-600">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="history-body" class="divide-y">
-                        <!-- Populated via JS -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- ===================== SETTINGS ============================== -->
-        <div id="view-settings" class="view-section hidden">
-            <h2 class="text-2xl font-bold mb-6">Settings</h2>
-            <div class="bg-white rounded-xl shadow-sm border p-6 max-w-2xl">
-                <form class="space-y-6" onsubmit="return false">
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-1">Google Photos Auth Data (GP_AUTH_DATA)</label>
-                        <input type="text" id="gp-auth-data" placeholder="Enter auth data..."
-                            class="w-full border rounded-lg px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-1">Upload Quality</label>
-                        <select id="upload-quality" class="w-full border rounded-lg px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="Original Quality">Original Quality</option>
-                            <option value="Storage Saver">Storage Saver</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-1">Upload Threads</label>
-                        <input type="number" id="upload-threads" value="10" min="1" max="20"
-                            class="w-full border rounded-lg px-3 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <p class="text-xs text-gray-500 mt-1">Number of files to upload concurrently.</p>
-                    </div>
-                    <div class="space-y-3">
-                        <div class="flex items-center">
-                            <input type="checkbox" id="recursive" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300">
-                            <label for="recursive" class="ml-2 block text-sm font-semibold text-gray-700">Recursive folder scanning</label>
-                        </div>
-                        <div class="flex items-center">
-                            <input type="checkbox" id="auto-album" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300">
-                            <label for="auto-album" class="ml-2 block text-sm font-semibold text-gray-700">Auto-create albums from folder structure</label>
-                        </div>
-                        <div class="flex items-center">
-                            <input type="checkbox" id="skip-existing" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300">
-                            <label for="skip-existing" class="ml-2 block text-sm font-semibold text-gray-700">Skip existing files</label>
-                        </div>
-                        <div class="flex items-center">
-                            <input type="checkbox" id="delete-upload" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300">
-                            <label for="delete-upload" class="ml-2 block text-sm font-semibold text-gray-700">Delete local file after successful upload</label>
-                        </div>
-                    </div>
-                    <div class="pt-4 border-t">
-                        <button type="button" id="save-settings-btn"
-                            class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">
-                            Save Settings
-                        </button>
-                    </div>
-                </form>
-
-                <!-- System Controls -->
-                <div class="mt-8 pt-6 border-t border-gray-200">
-                    <h3 class="text-lg font-bold text-gray-800 mb-4">System Controls</h3>
-                    <div class="flex flex-wrap gap-4">
-                        <button id="btn-toggle-service" onclick="systemToggleService()" class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm shadow-sm">
-                            Stop Service
-                        </button>
-                        <button onclick="systemRestart()" class="bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm shadow-sm">
-                            Restart System
-                        </button>
-                        <button onclick="systemShutdown()" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm shadow-sm">
-                            Shutdown System
-                        </button>
-                    </div>
-                    <p class="text-xs text-gray-500 mt-3"><strong>Start/Stop Service:</strong> Toggles automatic USB copying. <strong>Restart/Shutdown:</strong> Reboot or turn off the actual hardware.</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- ===================== EXT DRIVE ============================= -->
-        <!-- Completely separate from USB copy+upload workflow.
-             Mount point: /mnt/external_drive (permanent, via fstab). -->
-        <div id="view-extdrive" class="view-section hidden">
-            <div class="flex justify-between items-center mb-6">
-                <div class="flex items-center gap-3">
-                    <h2 class="text-2xl font-bold">External Drive</h2>
-                    <span id="ext-phase-badge" class="px-2.5 py-1 bg-gray-100 text-gray-500 text-xs font-semibold rounded-full">Idle</span>
-                </div>
-                <div class="flex gap-2">
-                    <button id="btn-ext-upload" onclick="extStartUpload()"
-                        class="bg-amber-500 hover:bg-amber-600 text-white font-semibold py-2 px-4 rounded-lg text-sm transition-colors shadow-sm">
-                        ▶ Upload to Google Photos
-                    </button>
-                    <button id="btn-ext-pause" onclick="extPause()" class="hidden text-xs font-semibold px-3 py-1.5 rounded-lg bg-yellow-100 hover:bg-yellow-200 text-yellow-800 transition-colors">
-                        ⏸ Pause
-                    </button>
-                    <button id="btn-ext-resume" onclick="extResume()" class="hidden text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-100 hover:bg-green-200 text-green-800 transition-colors">
-                        ▶ Resume
-                    </button>
-                    <button id="btn-ext-stop" onclick="extStop()" class="hidden text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 transition-colors">
-                        ✕ Stop
-                    </button>
+                <div class="card-plain">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Device / Source</th>
+                                <th>Start Time</th>
+                                <th>Copy</th>
+                                <th>Upload</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-body"></tbody>
+                    </table>
                 </div>
             </div>
 
-            <!-- Drive status card -->
-            <div id="ext-drive-card" class="bg-white rounded-2xl shadow-sm border p-5 mb-6">
-                <div class="flex items-center gap-3 mb-3">
-                    <div class="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
-                        <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/>
-                            <circle cx="12" cy="12" r="2" stroke-width="2"/>
-                        </svg>
-                    </div>
-                    <div>
-                        <p class="text-sm font-semibold text-gray-800">Permanent External HDD</p>
-                        <p id="ext-mount-point" class="text-xs text-gray-500">/mnt/external_drive</p>
-                    </div>
-                    <span id="ext-mount-badge" class="ml-auto px-2.5 py-1 bg-gray-100 text-gray-500 text-xs font-semibold rounded-full">Checking…</span>
+            <!-- ====== SETTINGS ====== -->
+            <div id="view-settings" class="view-section hidden">
+                <div class="view-header">
+                    <h1 class="view-title">Settings</h1>
                 </div>
-                <div class="grid grid-cols-3 gap-3 text-sm mb-3">
-                    <div class="bg-gray-50 rounded-xl p-3 text-center">
-                        <p class="text-xs text-gray-500 mb-1">Total</p>
-                        <p id="ext-total" class="font-bold text-gray-800">—</p>
-                    </div>
-                    <div class="bg-amber-50 rounded-xl p-3 text-center">
-                        <p class="text-xs text-gray-500 mb-1">Used</p>
-                        <p id="ext-used" class="font-bold text-amber-700">—</p>
-                    </div>
-                    <div class="bg-green-50 rounded-xl p-3 text-center">
-                        <p class="text-xs text-gray-500 mb-1">Free</p>
-                        <p id="ext-free" class="font-bold text-green-700">—</p>
-                    </div>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                    <div id="ext-drive-bar" class="bg-amber-500 h-2 rounded-full transition-all duration-700" style="width:0%"></div>
-                </div>
-                <button onclick="fetchExtDriveStatus()" class="mt-3 text-xs text-gray-400 hover:text-gray-600 transition-colors">↻ Refresh status</button>
-            </div>
-
-            <!-- Progress + recent files -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-                <!-- Upload progress ring -->
-                <div class="bg-white rounded-2xl shadow-sm border p-6">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="text-base font-semibold text-gray-800">Upload Progress</h3>
-                        <span id="ext-speed" class="text-xs font-bold text-amber-600">— MB/s</span>
-                    </div>
-
-                    <div class="flex items-center justify-center my-2">
-                        <div class="relative w-44 h-44">
-                            <svg class="w-full h-full -rotate-90" viewBox="0 0 120 120">
-                                <circle cx="60" cy="60" r="50" fill="none" stroke="#e5e7eb" stroke-width="10"/>
-                                <circle id="ext-ring" cx="60" cy="60" r="50" fill="none" stroke="#f59e0b" stroke-width="10"
-                                    stroke-linecap="round" stroke-dasharray="314" stroke-dashoffset="314"
-                                    style="transition: stroke-dashoffset 0.6s ease"/>
-                            </svg>
-                            <div class="absolute inset-0 flex flex-col items-center justify-center">
-                                <span id="ext-pct" class="text-3xl font-bold text-gray-800">0%</span>
-                                <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Uploaded</span>
-                                <span id="ext-count" class="text-xs text-gray-400 mt-1">0 / 0 files</span>
+                <div class="settings-grid">
+                    <div class="settings-card">
+                        <h3 class="settings-section-title">Upload Configuration</h3>
+                        <form class="settings-form" onsubmit="return false">
+                            <div class="form-group">
+                                <label class="form-label" for="gp-auth-data">Google Photos Auth Data</label>
+                                <input type="password" id="gp-auth-data" placeholder="Enter GP_AUTH_DATA&hellip;" class="form-input">
                             </div>
+                            <div class="form-group">
+                                <label class="form-label" for="upload-quality">Upload Quality</label>
+                                <select id="upload-quality" class="form-input">
+                                    <option value="Original Quality">Original Quality</option>
+                                    <option value="Storage Saver">Storage Saver</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="upload-threads">Upload Threads</label>
+                                <input type="number" id="upload-threads" value="10" min="1" max="20" class="form-input">
+                                <p class="form-hint">Concurrent files to upload simultaneously.</p>
+                            </div>
+                            <div class="form-toggles">
+                                <label class="toggle-row"><input type="checkbox" id="recursive" class="toggle-check"><span class="toggle-label">Recursive folder scanning</span></label>
+                                <label class="toggle-row"><input type="checkbox" id="auto-album" class="toggle-check"><span class="toggle-label">Auto-create albums from folder structure</span></label>
+                                <label class="toggle-row"><input type="checkbox" id="skip-existing" class="toggle-check"><span class="toggle-label">Skip existing files</span></label>
+                                <label class="toggle-row"><input type="checkbox" id="delete-upload" class="toggle-check"><span class="toggle-label">Delete local file after successful upload</span></label>
+                            </div>
+                            <button type="button" id="save-settings-btn" class="btn btn-primary">Save Settings</button>
+                        </form>
+                    </div>
+
+                    <div class="settings-card">
+                        <h3 class="settings-section-title">System Controls</h3>
+                        <p class="settings-hint">Start/Stop toggles automatic USB copying. Restart/Shutdown controls the hardware.</p>
+                        <div class="system-controls">
+                            <button id="btn-toggle-service" onclick="systemToggleService()" class="sys-btn sys-yellow">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                                Stop Service
+                            </button>
+                            <button onclick="systemRestart()" class="sys-btn sys-orange">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                                Restart System
+                            </button>
+                            <button onclick="systemShutdown()" class="sys-btn sys-red">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+                                Shutdown
+                            </button>
                         </div>
                     </div>
-
-                    <p id="ext-status-text" class="text-sm text-gray-400 text-center mt-2">Ready — click "Upload to Google Photos" to start.</p>
-                </div>
-
-                <!-- Recent files -->
-                <div class="bg-white rounded-2xl shadow-sm border p-6">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="text-base font-semibold text-gray-800">Recent Files</h3>
-                        <span class="text-xs text-gray-400">Live feed</span>
-                    </div>
-                    <ul id="ext-files" class="space-y-2 max-h-64 overflow-y-auto pr-1">
-                        <!-- populated by JS -->
-                    </ul>
-                    <p id="ext-files-empty" class="text-sm text-gray-400 text-center py-4">No files processed yet.</p>
                 </div>
             </div>
 
-            <!-- Session history -->
-            <div class="bg-white rounded-2xl shadow-sm border mt-6">
-                <div class="p-4 border-b flex justify-between items-center">
-                    <h3 class="text-base font-semibold text-gray-800">Session History</h3>
-                    <button onclick="fetchExtDriveHistory()" class="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded border">Refresh</button>
-                </div>
-                <table class="w-full text-left text-sm">
-                    <thead class="bg-gray-50 border-b">
-                        <tr>
-                            <th class="p-4 font-semibold text-gray-600">Session</th>
-                            <th class="p-4 font-semibold text-gray-600">Started</th>
-                            <th class="p-4 font-semibold text-gray-600">Total</th>
-                            <th class="p-4 font-semibold text-gray-600">Uploaded</th>
-                            <th class="p-4 font-semibold text-gray-600">Failed</th>
-                            <th class="p-4 font-semibold text-gray-600">Skipped</th>
-                            <th class="p-4 font-semibold text-gray-600">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="ext-history-body" class="divide-y">
-                        <tr><td colspan="7" class="p-8 text-center text-gray-400">No sessions yet.</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        </main>
+    </div>
 
-    </main>
-
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=5"></script>
 </body>
 </html>

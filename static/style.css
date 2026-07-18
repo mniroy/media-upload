@@ -1,4 +1,912 @@
-/* Custom styles if needed */
+/* =============================================================
+   Media Upload Hub — style.css
+   Light, warm, human-feel design (Autumn dashboard inspired)
+   ============================================================= */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    /* Backgrounds */
+    --bg:          #f0ede8;
+    --surface:     #ffffff;
+    --surface2:    #f7f6f3;
+    --sidebar-bg:  #faf9f7;
+
+    /* Borders */
+    --border:      #e8e5e0;
+    --border2:     #d8d4ce;
+
+    /* Text */
+    --text:        #1a1a1a;
+    --text-sub:    #6b6b6b;
+    --text-faint:  #a0a0a0;
+
+    /* Station colors — muted, human */
+    --usb:         #3d6b9e;
+    --usb-soft:    #eef2f8;
+    --usb-mid:     #c4d5ea;
+
+    --cloud:       #5b4fcf;
+    --cloud-soft:  #f0eefb;
+    --cloud-mid:   #c8c2ef;
+
+    --ext:         #c97b2a;
+    --ext-soft:    #fdf4e7;
+    --ext-mid:     #f0ceA0;
+
+    /* Status */
+    --green:       #2a7e5c;
+    --green-soft:  #eaf4ef;
+    --red:         #c0392b;
+    --red-soft:    #fdf0ef;
+    --yellow:      #c8960a;
+    --yellow-soft: #fef9e7;
+    --orange:      #d4610f;
+
+    /* Segmented bar palette */
+    --seg-issue:    #e05a5a;
+    --seg-moderate: #e8a820;
+    --seg-stable:   #2a7e5c;
+
+    /* Layout — squarer radii */
+    --sidebar-w:   220px;
+    --radius:      8px;      /* was 10 */
+    --radius-sm:   5px;      /* was 7 */
+    --shadow:      0 1px 2px rgba(0,0,0,0.06), 0 2px 6px rgba(0,0,0,0.04);
+    --shadow-md:   0 4px 14px rgba(0,0,0,0.08);
+    --transition:  0.15s ease;
+}
+
+html, body { height: 100%; }
+
 body {
-    font-family: 'Inter', sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+    overflow: hidden;
+}
+
+/* =============================================================
+   APP SHELL
+   ============================================================= */
+.app-shell {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* =============================================================
+   SIDEBAR
+   ============================================================= */
+.sidebar {
+    width: var(--sidebar-w);
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 18px 16px 14px;
+    border-bottom: 1px solid var(--border);
+}
+
+.logo-mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: var(--usb);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    flex-shrink: 0;
+}
+
+.logo-text { display: flex; flex-direction: column; }
+.logo-name { font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: -0.2px; }
+.logo-sub  { font-size: 10px; color: var(--text-faint); }
+
+/* NAV */
+.sidebar-nav {
+    flex: 1;
+    padding: 10px 8px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.nav-section-label {
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    padding: 10px 8px 4px;
+    margin-top: 6px;
+}
+
+.nav-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 8px 4px;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-decoration: none;
+    color: var(--text-sub);
+    transition: all var(--transition);
+    position: relative;
+}
+
+.nav-item:hover { background: var(--surface2); color: var(--text); }
+
+.nav-item.nav-active {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow);
+}
+
+.nav-item.nav-active-ext {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow);
+}
+
+.nav-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--text-faint);
+}
+
+.nav-item.nav-active .nav-icon,
+.nav-item:hover .nav-icon { color: var(--text-sub); }
+
+.nav-icon-usb { color: var(--usb); }
+.nav-icon-ext { color: var(--ext); }
+
+.nav-item.nav-active .nav-icon-usb { color: var(--usb); }
+.nav-item.nav-active-ext .nav-icon-ext { color: var(--ext); }
+
+.nav-label { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.nav-title { font-size: 12.5px; font-weight: 600; line-height: 1.3; color: inherit; }
+.nav-sub   { font-size: 10px; color: var(--text-faint); font-weight: 400; }
+
+.nav-item.nav-active .nav-sub { color: var(--text-faint); }
+
+.nav-badge {
+    width: 2px;
+    height: 14px;
+    border-radius: 1px;
+    background: var(--ext);
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+/* SIDEBAR FOOTER */
+.sidebar-footer {
+    padding: 12px 14px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.storage-widget { display: flex; flex-direction: column; gap: 5px; }
+
+.storage-widget-ext { padding-top: 10px; border-top: 1px solid var(--border); }
+
+.storage-header { display: flex; justify-content: space-between; align-items: center; }
+
+.storage-label {
+    font-size: 9.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+}
+
+.storage-label-ext { color: var(--ext); }
+
+.storage-used { font-size: 12px; font-weight: 700; color: var(--text); }
+
+.storage-track {
+    height: 3px;
+    background: var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.storage-fill {
+    height: 100%;
+    background: var(--usb);
+    border-radius: 999px;
+    transition: width 1s ease;
+}
+
+.storage-fill-ext { background: var(--ext); }
+
+.storage-details { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-faint); }
+
+.ext-mount-inline { font-size: 10px; font-weight: 600; color: var(--text-faint); }
+
+/* =============================================================
+   MAIN CONTENT
+   ============================================================= */
+.main-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 24px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.view-section { display: none; flex-direction: column; gap: 16px; animation: fadeIn 0.2s ease; }
+.view-section.active, .view-section:not(.hidden) { display: flex; }
+
+@keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+
+/* =============================================================
+   VIEW HEADER
+   ============================================================= */
+.view-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+.view-header-left { display: flex; align-items: center; gap: 12px; }
+.view-header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.station-icon {
+    width: 38px; height: 38px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.station-icon-usb { background: var(--usb-soft); color: var(--usb); }
+.station-icon-ext { background: var(--ext-soft); color: var(--ext); }
+
+.view-title {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+    color: var(--text);
+    line-height: 1.2;
+}
+
+.view-subtitle { font-size: 12px; color: var(--text-sub); margin-top: 2px; }
+
+/* =============================================================
+   DUAL PANEL
+   ============================================================= */
+.dual-panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    align-items: start;
+}
+
+/* =============================================================
+   STATION CARDS
+   ============================================================= */
+.station-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    box-shadow: var(--shadow);
+}
+
+/* No colored top borders — clean white cards like the reference */
+
+/* Card Header */
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.card-header-left { display: flex; align-items: center; gap: 8px; }
+
+.card-icon-sm {
+    width: 26px; height: 26px;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.icon-blue   { background: var(--usb-soft);   color: var(--usb);   }
+.icon-purple { background: var(--cloud-soft);  color: var(--cloud); }
+.icon-amber  { background: var(--ext-soft);    color: var(--ext);   }
+
+.card-title { font-size: 13px; font-weight: 700; color: var(--text); }
+
+/* =============================================================
+   STAT HERO (replaces ring chart)
+   ============================================================= */
+.stat-hero {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 0 6px;
+}
+
+.stat-value {
+    font-size: 42px;
+    font-weight: 800;
+    color: var(--text);
+    letter-spacing: -2px;
+    line-height: 1;
+}
+
+.stat-value sup {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0;
+    vertical-align: super;
+    margin-right: 2px;
+}
+
+.stat-unit {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-sub);
+    letter-spacing: 0;
+    margin-left: 2px;
+}
+
+.stat-label { font-size: 11px; color: var(--text-sub); font-weight: 500; }
+
+.stat-change {
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+}
+
+.stat-change.up   { color: var(--green); }
+.stat-change.down { color: var(--red); }
+.stat-change.neutral { color: var(--text-faint); }
+
+/* =============================================================
+   SEGMENTED BAR
+   ============================================================= */
+.seg-bar-wrap { display: flex; flex-direction: column; gap: 6px; }
+
+.seg-bar {
+    display: flex;
+    height: 7px;
+    border-radius: 999px;
+    overflow: hidden;
+    gap: 2px;
+}
+
+.seg-piece {
+    height: 100%;
+    border-radius: 999px;
+    flex-shrink: 0;
+    transition: width 0.8s ease;
+}
+
+.seg-issue    { background: var(--seg-issue);    }
+.seg-moderate { background: var(--seg-moderate); }
+.seg-stable   { background: var(--seg-stable);   }
+.seg-usb      { background: var(--usb);          }
+.seg-cloud    { background: var(--cloud);        }
+.seg-ext      { background: var(--ext);          }
+.seg-gray     { background: var(--border2);      }
+
+.seg-legend {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.seg-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-sub);
+}
+
+.seg-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* =============================================================
+   THIN VERTICAL BAR CHART (like reference's segmented bars)
+   ============================================================= */
+.bar-chart-thin {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 52px;
+}
+
+.bar-col {
+    flex: 1;
+    border-radius: 2px 2px 0 0;
+    min-height: 2px;
+    background: var(--usb);
+    transition: height 0.5s ease;
+}
+
+.bar-col.dim { background: var(--border); }
+
+/* =============================================================
+   USB INFO BAR
+   ============================================================= */
+.usb-info-bar {
+    background: var(--usb-soft);
+    border: 1px solid var(--usb-mid);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.usb-info-header { display: flex; justify-content: space-between; align-items: center; }
+.usb-device-name { font-size: 12px; font-weight: 700; color: var(--usb); }
+.usb-actions { display: flex; gap: 6px; align-items: center; }
+
+.usb-stats { display: flex; gap: 12px; font-size: 11px; color: var(--text-sub); }
+.usb-stats strong { color: var(--text); }
+
+/* =============================================================
+   DRIVE STATS
+   ============================================================= */
+.drive-stats-bar {
+    background: var(--ext-soft);
+    border: 1px solid var(--ext-mid);
+    border-radius: var(--radius-sm);
+    padding: 11px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.drive-mount-point { font-size: 10px; color: var(--text-sub); font-family: monospace; }
+
+.drive-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+}
+
+.drive-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    align-items: center;
+    background: rgba(255,255,255,0.6);
+    border-radius: 6px;
+    padding: 5px 4px;
+    border: 1px solid var(--ext-mid);
+}
+
+.stat-label-sm { font-size: 9px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.stat-val-sm   { font-size: 12px; font-weight: 700; color: var(--text); }
+.text-amber    { color: var(--ext); }
+.text-green    { color: var(--green); }
+
+.refresh-link {
+    background: none; border: none; cursor: pointer;
+    font-size: 10px; color: var(--text-faint);
+    transition: color var(--transition);
+    text-align: left; padding: 0;
+    font-family: inherit;
+}
+.refresh-link:hover { color: var(--text-sub); }
+
+/* =============================================================
+   MINI TRACK
+   ============================================================= */
+.mini-track { height: 3px; background: var(--border); border-radius: 999px; overflow: hidden; }
+.mini-fill  { height: 100%; border-radius: 999px; transition: width 0.8s ease; }
+.fill-blue  { background: var(--usb); }
+.fill-amber { background: var(--ext); }
+
+/* =============================================================
+   CARD STATUS TEXT
+   ============================================================= */
+.card-status { font-size: 12px; color: var(--text-sub); line-height: 1.5; }
+
+/* =============================================================
+   CONTROL BUTTONS — plain flat, no pastel fills
+   ============================================================= */
+.ctrl-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.ctrl-btn {
+    font-size: 11.5px; font-weight: 500;
+    padding: 5px 11px; border-radius: 4px;
+    border: 1px solid var(--border2);
+    cursor: pointer; transition: background var(--transition);
+    background: var(--surface);
+    color: var(--text-sub);
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.ctrl-btn:hover { background: var(--surface2); color: var(--text); }
+
+.btn-group { display: inline-flex; }
+.btn-group > button { margin: 0; }
+.btn-group > button:not(:first-child) { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.btn-group > button:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+/* No more colored ctrl variants — all same neutral style */
+.ctrl-yellow { color: var(--text-sub); }
+.ctrl-green  { color: var(--text-sub); }
+.ctrl-red    { color: var(--text-sub); }
+
+/* =============================================================
+   FILE FEED
+   ============================================================= */
+.file-feed { display: flex; flex-direction: column; gap: 5px; }
+
+.file-feed-label {
+    font-size: 9.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-faint);
+    margin-bottom: 2px;
+}
+
+.file-list {
+    list-style: none;
+    display: flex; flex-direction: column; gap: 0;
+    max-height: 180px; overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border2) transparent;
+}
+
+.file-empty { font-size: 12px; color: var(--text-faint); text-align: center; padding: 14px 0; }
+
+/* =============================================================
+   INLINE HISTORY
+   ============================================================= */
+.inline-history {
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+    display: flex; flex-direction: column; gap: 8px;
+}
+
+.inline-history-header { display: flex; align-items: center; justify-content: space-between; }
+
+.history-table-wrap { overflow-x: auto; overflow-y: auto; max-height: 180px; scrollbar-width: thin; }
+
+.history-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+
+.history-table thead th {
+    padding: 6px 8px; text-align: left;
+    font-size: 9.5px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-faint);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    white-space: nowrap;
+}
+
+.history-table tbody td {
+    padding: 7px 8px;
+    border-bottom: 1px solid rgba(0,0,0,0.03);
+    color: var(--text-sub); white-space: nowrap;
+}
+
+.history-table tbody tr:last-child td { border-bottom: none; }
+.history-table tbody tr:hover td { background: var(--surface2); color: var(--text); }
+
+.history-empty { text-align: center; color: var(--text-faint); padding: 16px !important; font-size: 12px; }
+
+/* =============================================================
+   BADGES — plain text with colored label, white/surface bg
+   ============================================================= */
+.badge {
+    font-size: 11.5px; font-weight: 500;
+    padding: 3px 0;
+    display: inline-flex; align-items: center; gap: 5px;
+    color: var(--text-sub);
+}
+
+/* All badge variants: just colored text, no background fill */
+.badge-gray   { color: var(--text-faint); }
+.badge-green  { color: var(--green); }
+.badge-red    { color: var(--red); }
+.badge-yellow { color: var(--yellow); }
+.badge-blue   { color: var(--usb); }
+.badge-purple { color: var(--cloud); }
+.badge-amber  { color: var(--ext); }
+
+/* Small card-corner badge (Done, Mounted etc) — subtle border, no colored bg */
+.badge-corner {
+    font-size: 11px; font-weight: 500;
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--border2);
+    background: var(--surface2);
+    color: var(--text-sub);
+}
+
+.badge-pulse {
+    color: var(--ext);
+    font-size: 11.5px; font-weight: 500;
+    display: inline-flex; align-items: center; gap: 5px;
+}
+
+/* Status dot — small and non-glowing */
+.status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+.dot-green  { background: var(--green); }
+.dot-yellow { background: var(--yellow); }
+.dot-red    { background: var(--red); }
+.dot-gray   { background: var(--text-faint); }
+.dot-blue   { background: var(--usb); }
+/* No pulse animation on dots */
+.dot-pulse  { }
+
+/* =============================================================
+   BUTTONS — flat, minimal, functional
+   ============================================================= */
+.btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 500;
+    padding: 6px 12px; border-radius: 4px;
+    border: 1px solid var(--border2); cursor: pointer;
+    transition: background var(--transition); white-space: nowrap;
+    font-family: inherit; background: var(--surface);
+    color: var(--text-sub);
+}
+
+.btn:hover { background: var(--surface2); color: var(--text); }
+
+.btn-primary {
+    background: var(--text); color: white; border-color: var(--text);
+}
+.btn-primary:hover { background: #333; }
+
+/* All these are now uniform — no colored fills */
+.btn-secondary   { color: var(--text-sub); }
+.btn-ghost       { color: var(--text-sub); }
+.btn-danger-ghost { color: var(--text-sub); }
+.btn-outline-usb  { color: var(--text-sub); }
+.btn-outline-ext  { color: var(--text-sub); }
+
+.btn-xs {
+    font-size: 11px; font-weight: 500; padding: 3px 7px;
+    border-radius: 3px; border: 1px solid var(--border2);
+    cursor: pointer; transition: background var(--transition);
+    font-family: inherit; background: var(--surface); color: var(--text-sub);
+}
+.btn-xs:hover { background: var(--surface2); color: var(--text); }
+
+.btn-danger-ghost.btn-xs { color: var(--text-sub); }
+.btn-danger-ghost.btn-xs:hover { background: var(--surface2); }
+
+.btn-ghost-xs {
+    background: var(--surface); color: var(--text-sub); border: 1px solid var(--border);
+    font-size: 11px; font-weight: 500; padding: 3px 7px; border-radius: 3px;
+    cursor: pointer; transition: background var(--transition); font-family: inherit;
+}
+.btn-ghost-xs:hover { background: var(--surface2); color: var(--text); }
+
+/* =============================================================
+   FILE EXPLORER & HISTORY TABLES
+   ============================================================= */
+.card-plain {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+}
+
+.data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+
+.data-table thead th {
+    padding: 10px 14px; text-align: left;
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--text-faint);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+}
+
+.data-table tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(0,0,0,0.03);
+    color: var(--text-sub);
+}
+
+.data-table tbody tr:last-child td { border-bottom: none; }
+.data-table tbody tr:hover td { background: var(--surface2); color: var(--text); }
+
+/* =============================================================
+   SYSTEM BUTTONS — plain like any other button
+   ============================================================= */
+.system-controls { display: flex; flex-direction: column; gap: 6px; }
+
+.sys-btn {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; font-weight: 500; padding: 8px 12px;
+    border-radius: 4px; border: 1px solid var(--border2);
+    cursor: pointer; transition: background var(--transition); font-family: inherit;
+    background: var(--surface); color: var(--text-sub);
+}
+
+.sys-btn:hover { background: var(--surface2); color: var(--text); }
+
+/* No colored fills — just plain */
+.sys-yellow { color: var(--text-sub); }
+.sys-orange { color: var(--text-sub); }
+.sys-red    { color: var(--text-sub); }
+
+/* =============================================================
+   SETTINGS
+   ============================================================= */
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+
+.settings-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px;
+    display: flex; flex-direction: column; gap: 14px;
+    box-shadow: var(--shadow);
+}
+
+.settings-section-title { font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: -0.2px; }
+.settings-hint { font-size: 12px; color: var(--text-sub); line-height: 1.6; }
+.settings-form { display: flex; flex-direction: column; gap: 13px; }
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-label { font-size: 11px; font-weight: 600; color: var(--text-sub); }
+
+.form-input {
+    background: var(--surface2); border: 1px solid var(--border2);
+    border-radius: 4px; padding: 7px 10px;
+    color: var(--text); font-size: 12.5px; font-family: inherit;
+    transition: border-color var(--transition); width: 100%;
+}
+
+.form-input:focus { outline: none; border-color: var(--usb); }
+select.form-input { cursor: pointer; }
+.form-hint { font-size: 10px; color: var(--text-faint); }
+
+.form-toggles { display: flex; flex-direction: column; gap: 9px; }
+.toggle-row { display: flex; align-items: center; gap: 9px; cursor: pointer; }
+.toggle-check { width: 14px; height: 14px; cursor: pointer; flex-shrink: 0; }
+.toggle-label { font-size: 12.5px; color: var(--text-sub); user-select: none; }
+
+/* =============================================================
+   TOAST
+   ============================================================= */
+.toast {
+    position: fixed; bottom: 20px; right: 20px; z-index: 9999;
+    display: flex; align-items: center; gap: 8px;
+    background: var(--text); color: var(--surface);
+    font-size: 12.5px; font-weight: 500;
+    padding: 10px 14px; border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    max-width: 280px;
+}
+
+.toast.hide { opacity: 0; transform: translateY(8px); pointer-events: none; }
+
+/* =============================================================
+   MODAL
+   ============================================================= */
+.modal-overlay {
+    position: fixed; inset: 0; z-index: 9000;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(15,15,15,0.4);
+    backdrop-filter: blur(4px);
+}
+
+.modal-overlay.hidden { display: none; }
+
+.modal-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow-md);
+    width: 100%; max-width: 460px; margin: 16px;
+    padding: 24px; display: flex; flex-direction: column; gap: 14px;
+}
+
+.modal-title { font-size: 16px; font-weight: 800; color: var(--text); }
+.modal-subtitle { font-size: 12px; color: var(--text-sub); line-height: 1.5; }
+
+.modal-actions { display: flex; align-items: center; gap: 12px; }
+
+.countdown-ring-wrap { position: relative; width: 46px; height: 46px; flex-shrink: 0; }
+.countdown-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.countdown-sec-label {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: var(--usb);
+}
+
+.modal-btn-group { display: flex; gap: 7px; flex-wrap: wrap; }
+
+.folder-list {
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    overflow: hidden; overflow-y: auto; max-height: 260px;
+}
+
+.folder-none { font-size: 12px; color: var(--text-faint); text-align: center; padding: 14px; }
+
+/* =============================================================
+   SCROLLBAR
+   ============================================================= */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+/* =============================================================
+   ANIMATIONS — only what's needed, no show-off pulse
+   ============================================================= */
+@keyframes copy-slide {
+    from { opacity: 0; transform: translateX(-4px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Keep pulse only for the tiny live-feed indicator dot */
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+}
+
+.file-row-new { animation: copy-slide 0.18s ease; }
+/* .pulse-dot removed — no pulsing dots on badges */
+
+/* =============================================================
+   RESPONSIVE
+   ============================================================= */
+@media (max-width: 960px) {
+    :root { --sidebar-w: 188px; }
+    .dual-panel { grid-template-columns: 1fr; }
+    .settings-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+    .sidebar { display: none; }
+    .main-content { padding: 14px; }
 }

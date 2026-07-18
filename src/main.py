@@ -14,7 +14,7 @@ from src.usb_handler import (
 )
 from src.ext_drive_handler import (
     get_ext_drive_status, scan_top_level_folders, start_ext_drive_upload,
-    ext_stop, ext_pause, ext_resume,
+    ext_stop, ext_pause, ext_resume, reupload_failed_files,
 )
 
 main_loop = None
@@ -383,6 +383,14 @@ def extdrive_run_files(run_id: int, status: Optional[str] = None, limit: int = 2
     ]
     db.close()
     return result
+
+@app.post("/api/extdrive/runs/{run_id}/reupload")
+async def extdrive_reupload_failed(run_id: int, background_tasks: BackgroundTasks):
+    """Re-upload all failed files from a specific ext drive session."""
+    if _live_state.get("ext_phase") in ("scanning", "uploading"):
+        return {"status": "already_running"}
+    background_tasks.add_task(reupload_failed_files, run_id)
+    return {"status": "started", "source_run_id": run_id}
 
 # ---------------------------------------------------------------------------
 # System Controls

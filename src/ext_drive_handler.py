@@ -449,3 +449,186 @@ def start_ext_drive_upload():
         "status": run.overall_status,
     })
     print(f"[ext_drive] Run {run_id} complete: {uploaded} uploaded, {failed} failed, {skipped} skipped.")
+
+
+# ---------------------------------------------------------------------------
+# Re-upload failed files from a previous run
+# ---------------------------------------------------------------------------
+
+def reupload_failed_files(source_run_id: int):
+    """
+    Re-upload only the files that failed in a previous ext drive run.
+    Creates a brand-new ExtDriveRun and attempts each failed filepath again.
+    """
+    from src.uploader import upload_file, UPLOAD_NEW, UPLOAD_DUPLICATE, UPLOAD_SKIPPED, UPLOAD_FAILED
+
+    _ext_stop_event.clear()
+    _ext_pause_event.clear()
+
+    db = SessionLocal()
+
+    # Fetch failed files from the source run
+    failed_records = db.query(ExtDriveFile).filter(
+        ExtDriveFile.run_id == source_run_id,
+        ExtDriveFile.upload_status == "failed"
+    ).all()
+
+    filepaths = [r.filepath for r in failed_records if r.filepath]
+    total = len(filepaths)
+
+    if total == 0:
+        db.close()
+        _broadcast("ext_run_completed", {"error": "No failed files found for that session."})
+        return
+
+    # Create a new run record
+    run = ExtDriveRun()
+    run.total_files = total
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    run_id = run.id
+
+    _broadcast("ext_run_started", {"run_id": run_id, "drive_root": f"reupload from session #{source_run_id}"})
+    _broadcast("ext_scan_done", {"run_id": run_id, "total": total})
+    _broadcast("ext_upload_started", {"run_id": run_id, "total": total})
+
+    uploaded = 0
+    failed = 0
+    skipped = 0
+    current_idx = 0
+
+    for filepath in filepaths:
+        if _ext_stop_event.is_set():
+            _broadcast("ext_upload_stopped", {"at": current_idx, "total": total})
+            break
+
+        while _ext_pause_event.is_set():
+            if _ext_stop_event.is_set():
+                break
+            time.sleep(0.5)
+
+        current_idx += 1
+
+        if not os.path.exists(filepath):
+            # File no longer exists on the drive
+            record = ExtDriveFile(run_id=run_id, filepath=filepath, upload_status="failed",
+                                  error_message="File not found on drive")
+            db.add(record)
+            db.commit()
+            failed += 1
+            _broadcast("ext_upload_progress", {
+                "run_id": run_id,
+                "filepath": filepath,
+                "filename": os.path.basename(filepath),
+                "current": current_idx,
+                "total": total,
+                "status": "failed",
+                "reason": "File not found on drive",
+            })
+            continue
+
+        file_size = os.path.getsize(filepath)
+
+        record = ExtDriveFile(run_id=run_id, filepath=filepath, upload_status="pending")
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        _broadcast("ext_upload_progress", {
+            "run_id": run_id,
+            "filepath": filepath,
+            "filename": os.path.basename(filepath),
+            "current": current_idx,
+            "total": total,
+            "file_size": file_size,
+            "status": "uploading",
+        })
+
+        upload_status, err, duration = upload_file(filepath)
+
+        if upload_status == UPLOAD_NEW:
+            speed_mbps = (file_size / (1024 * 1024)) / duration if duration > 0 else 0
+            record.upload_status = "success"
+            uploaded += 1
+            _broadcast("ext_upload_speed", {"speed_mbps": round(speed_mbps, 2)})
+            _broadcast("ext_upload_progress", {
+                "run_id": run_id,
+                "filepath": filepath,
+                "filename": os.path.basename(filepath),
+                "current": current_idx,
+                "total": total,
+                "status": "uploaded",
+            })
+        elif upload_status == UPLOAD_DUPLICATE:
+            record.upload_status = "success"
+            record.error_message = "already_in_photos"
+            uploaded += 1
+            _broadcast("ext_upload_speed", {"speed_mbps": None})
+            _broadcast("ext_upload_progress", {
+                "run_id": run_id,
+                "filepath": filepath,
+                "filename": os.path.basename(filepath),
+                "current": current_idx,
+                "total": total,
+                "status": "already_in_photos",
+            })
+        elif upload_status == UPLOAD_SKIPPED:
+            record.upload_status = "skipped"
+            record.error_message = err
+            skipped += 1
+            _broadcast("ext_upload_speed", {"speed_mbps": None})
+            _broadcast("ext_upload_progress", {
+                "run_id": run_id,
+                "filepath": filepath,
+                "filename": os.path.basename(filepath),
+                "current": current_idx,
+                "total": total,
+                "status": "skipped",
+                "reason": err,
+            })
+        else:  # UPLOAD_FAILED
+            record.upload_status = "failed"
+            record.error_message = err
+            failed += 1
+            _broadcast("ext_upload_speed", {"speed_mbps": None})
+            _broadcast("ext_upload_progress", {
+                "run_id": run_id,
+                "filepath": filepath,
+                "filename": os.path.basename(filepath),
+                "current": current_idx,
+                "total": total,
+                "status": "failed",
+                "reason": err,
+            })
+
+        db.commit()
+
+    # Finalize run
+    run.uploaded_files = uploaded
+    run.failed_files = failed
+    run.skipped_files = skipped
+    run.end_time = datetime.datetime.now(datetime.timezone.utc)
+
+    if _ext_stop_event.is_set():
+        run.overall_status = "stopped"
+    elif failed > 0:
+        run.overall_status = "completed_with_errors"
+    else:
+        run.overall_status = "completed"
+
+    db.commit()
+    db.close()
+
+    _broadcast("ext_upload_done", {
+        "run_id": run_id,
+        "uploaded": uploaded,
+        "failed": failed,
+        "skipped": skipped,
+        "total": total,
+    })
+    _broadcast("ext_run_completed", {
+        "run_id": run_id,
+        "status": run.overall_status,
+    })
+    print(f"[ext_drive] Re-upload run {run_id} (from #{source_run_id}): {uploaded} uploaded, {failed} failed, {skipped} skipped.")
