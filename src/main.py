@@ -268,32 +268,6 @@ def get_run_details(run_id: int):
     return files
 
 # ---------------------------------------------------------------------------
-# File Explorer
-# ---------------------------------------------------------------------------
-
-@app.get("/api/files")
-def get_files(path: str = ""):
-    import os
-    staging_dir = "/var/lib/media_upload/staging"
-    target_dir = os.path.join(staging_dir, path)
-
-    if not os.path.exists(target_dir):
-        return []
-
-    items = []
-    if path:
-        items.append({"name": "..", "type": "directory", "size": 0})
-
-    for f in sorted(os.listdir(target_dir)):
-        full_path = os.path.join(target_dir, f)
-        if os.path.isdir(full_path):
-            items.append({"name": f, "type": "directory", "size": 0})
-        elif os.path.isfile(full_path):
-            size = os.path.getsize(full_path)
-            items.append({"name": f, "type": "file", "size": size})
-    return items
-
-# ---------------------------------------------------------------------------
 # Storage
 # ---------------------------------------------------------------------------
 

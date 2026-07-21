@@ -94,7 +94,7 @@
                 <div class="nav-divider"></div>
                 <div class="nav-section-label">Tools</div>
 
-                <a id="tab-files" class="nav-item" data-tab="files">
+                <a href="#" onclick="window.open('http://' + window.location.hostname + ':8080', '_blank'); return false;" class="nav-item">
                     <div class="nav-icon">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
@@ -439,23 +439,6 @@
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            <!-- ====== FILE EXPLORER ====== -->
-            <div id="view-files" class="view-section hidden">
-                <div class="view-header">
-                    <div class="view-header-left">
-                        <h1 class="view-title">File Explorer</h1>
-                        <p class="view-subtitle">/var/lib/media_upload/staging</p>
-                    </div>
-                    <button onclick="fetchFiles()" class="btn btn-ghost">&#8635; Refresh</button>
-                </div>
-                <div class="card-plain">
-                    <table class="data-table">
-                        <thead><tr><th>Name</th><th style="width:120px">Size</th></tr></thead>
-                        <tbody id="files-body"></tbody>
-                    </table>
                 </div>
             </div>
 

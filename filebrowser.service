@@ -1,0 +1,15 @@
+[Unit]
+Description=Filebrowser Web UI
+After=network.target
+
+[Service]
+Type=simple
+User=USER_NAME
+Group=USER_NAME
+WorkingDirectory=/var/lib/media_upload
+ExecStart=/usr/local/bin/filebrowser -d /var/lib/media_upload/filebrowser.db -r /var/lib/media_upload/fb_root -a 0.0.0.0 -p 8080 --noauth --followExternalSymlinks
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

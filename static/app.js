@@ -86,7 +86,6 @@ function switchTab(tab) {
 
     // Lazy load
     if (tab === 'history') fetchHistory();
-    if (tab === 'files') fetchFiles();
     if (tab === 'extdrive') { fetchExtDriveStatus(); fetchExtDriveHistory(); }
 }
 
@@ -667,32 +666,6 @@ async function fetchHistory() {
 }
 
 // ---------------------------------------------------------------------------
-// File Explorer
-// ---------------------------------------------------------------------------
-let currentPath = '';
-
-async function fetchFiles(path = '') {
-    currentPath = path;
-    const res = await fetch(`/api/files?path=${encodeURIComponent(path)}`);
-    const files = await res.json();
-    const tbody = document.getElementById('files-body');
-    tbody.innerHTML = '';
-    if (files.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;padding:32px;color:#4a5068">No files in staging directory.</td></tr>'; return;
-    }
-    files.forEach(file => {
-        const tr = document.createElement('tr');
-        if (file.type === 'directory') {
-            const newPath = file.name === '..' ? path.split('/').slice(0, -1).join('/') : (path ? path + '/' + file.name : file.name);
-            tr.innerHTML = `<td onclick="fetchFiles('${escapeAttr(newPath)}')" style="cursor:pointer;color:#6366f1;font-weight:600;display:flex;align-items:center;gap:8px">
-                <svg width="14" height="14" fill="#6366f1" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
-                ${escapeHtml(file.name)}</td><td>—</td>`;
-        } else {
-            tr.innerHTML = `<td style="color:#e8eaf0;font-weight:500">${escapeHtml(file.name)}</td><td>${formatBytes(file.size)}</td>`;
-        }
-        tbody.appendChild(tr);
-    });
-}
 
 // ---------------------------------------------------------------------------
 // Trigger manual upload (staged files)
