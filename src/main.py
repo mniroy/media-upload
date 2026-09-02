@@ -13,7 +13,7 @@ from src.usb_handler import (
     MOUNT_BASE
 )
 from src.ext_drive_handler import (
-    get_ext_drive_status, scan_top_level_folders, start_ext_drive_upload,
+    get_ext_drive_path, get_ext_drive_status, scan_top_level_folders, start_ext_drive_upload,
     ext_stop, ext_pause, ext_resume, reupload_failed_files,
 )
 
@@ -134,6 +134,37 @@ def get_settings():
 
 @app.post("/api/usb_event")
 async def handle_usb_event(event: UsbEvent, background_tasks: BackgroundTasks):
+    import subprocess
+    device_path = f"/dev/{event.device}"
+    is_ext_drive = False
+
+    try:
+        res = subprocess.run(["lsblk", "-no", "UUID", device_path], capture_output=True, text=True, timeout=5)
+        uuid = res.stdout.strip()
+        if uuid:
+            try:
+                with open("/etc/fstab", "r") as f:
+                    fstab = f.read()
+                if uuid in fstab and "external_drive" in fstab:
+                    is_ext_drive = True
+            except Exception:
+                pass
+            if not is_ext_drive and uuid == "6A4B-B5F8":
+                is_ext_drive = True
+    except Exception:
+        pass
+
+    if is_ext_drive:
+        ext_path = get_ext_drive_path()
+        if event.action == "add":
+            try:
+                subprocess.run(["mount", ext_path], capture_output=True, timeout=10)
+            except Exception:
+                pass
+        status = get_ext_drive_status()
+        trigger_broadcast("ext_drive_status", status)
+        return {"status": "ext_drive_event_handled", "device": event.device, "action": event.action}
+
     db = SessionLocal()
     setting = db.query(Setting).filter(Setting.key == "AUTO_COPY_ENABLED").first()
     is_enabled = setting.value != "false" if setting else True

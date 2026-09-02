@@ -110,24 +110,34 @@ def get_ext_drive_path() -> str:
 def get_ext_drive_status() -> dict:
     """Return mount status and disk usage for the external drive."""
     root = get_ext_drive_path()
-    mounted = os.path.ismount(root)
-    if not mounted:
-        # Try to detect if device is mounted elsewhere
-        try:
-            result = subprocess.run(
-                ["findmnt", "-n", "-o", "TARGET", "-S", "/dev/sdc1"],
-                capture_output=True, text=True, timeout=5
-            )
-            alt = result.stdout.strip()
-            if alt:
-                root = alt
+
+    # 1. Check if mount point is mounted with a real filesystem (not just autofs)
+    mounted = False
+    try:
+        res = subprocess.run(
+            ["findmnt", "-n", "-o", "FSTYPE,TARGET", "-M", root],
+            capture_output=True, text=True, timeout=5
+        )
+        lines = [line.strip() for line in res.stdout.strip().splitlines() if line.strip()]
+        for line in lines:
+            fstype = line.split()[0] if line else ""
+            if fstype and fstype != "autofs":
                 mounted = True
+                break
+    except Exception:
+        pass
+
+    # 2. If not mounted, try mounting it (triggers systemd or /etc/fstab entry)
+    if not mounted:
+        try:
+            subprocess.run(["mount", root], capture_output=True, timeout=10)
         except Exception:
             pass
 
-    if mounted:
-        try:
-            total, used, free = shutil.disk_usage(root)
+    # 3. Check disk usage & mount verification
+    try:
+        total, used, free = shutil.disk_usage(root)
+        if os.path.ismount(root) and total > 0:
             return {
                 "mounted": True,
                 "mount_point": root,
@@ -135,8 +145,8 @@ def get_ext_drive_status() -> dict:
                 "used": used,
                 "free": free,
             }
-        except Exception:
-            pass
+    except Exception:
+        pass
 
     return {
         "mounted": False,
@@ -228,8 +238,16 @@ def _iter_media_files(root: str):
 
 
 # ---------------------------------------------------------------------------
-# Already-uploaded check (single DB query per file — avoids giant in-memory set)
+# Already-uploaded helpers
 # ---------------------------------------------------------------------------
+
+def _get_uploaded_set(db) -> set:
+    """Return a set of all file paths successfully uploaded in any previous run."""
+    rows = db.query(ExtDriveFile.filepath).filter(
+        ExtDriveFile.upload_status == "success"
+    ).all()
+    return {r[0] for r in rows}
+
 
 def _is_already_uploaded(db, filepath: str) -> bool:
     """Return True if this filepath has been successfully uploaded in any previous run."""
@@ -247,8 +265,8 @@ def _is_already_uploaded(db, filepath: str) -> bool:
 def start_ext_drive_upload():
     """
     Entry point called from the API (runs in a BackgroundTask thread).
-    Streams every media file on the external drive to Google Photos,
-    skipping files already uploaded in previous runs.
+    Pre-loads previously uploaded files from local SQLite database into memory (< 0.5s),
+    filters the disk scan to only pending files, and uploads them to Google Photos.
     """
     from src.uploader import upload_file, UPLOAD_NEW, UPLOAD_DUPLICATE, UPLOAD_SKIPPED, UPLOAD_FAILED
 
@@ -274,12 +292,24 @@ def start_ext_drive_upload():
 
     _broadcast("ext_run_started", {"run_id": run_id, "drive_root": drive_root})
 
-    # Phase 1: count files (walk once, yields fast)
+    # Phase 1: Pre-load already uploaded paths from DB & scan disk
     _broadcast("ext_scan_started", {"run_id": run_id})
-    print(f"[ext_drive] Counting media files in {drive_root}...")
-    total = 0
-    for _ in _iter_media_files(drive_root):
-        total += 1
+    print(f"[ext_drive] Pre-loading uploaded paths from database...")
+    uploaded_set = _get_uploaded_set(db)
+    print(f"[ext_drive] Loaded {len(uploaded_set)} uploaded paths from DB.")
+
+    print(f"[ext_drive] Scanning media files in {drive_root}...")
+    pending_files = []
+    total_disk_files = 0
+    already_uploaded_count = 0
+
+    for filepath in _iter_media_files(drive_root):
+        total_disk_files += 1
+        if filepath in uploaded_set:
+            already_uploaded_count += 1
+        else:
+            pending_files.append(filepath)
+
         if _ext_stop_event.is_set():
             break
 
@@ -291,44 +321,62 @@ def start_ext_drive_upload():
         _broadcast("ext_run_completed", {"run_id": run_id, "error": "Stopped during scan"})
         return
 
-    run.total_files = total
+    total_pending = len(pending_files)
+    run.total_files = total_pending
+    run.skipped_files = already_uploaded_count
     db.commit()
-    _broadcast("ext_scan_done", {"run_id": run_id, "total": total})
-    print(f"[ext_drive] Found {total} media files to process.")
 
-    # Phase 2: upload (second walk — generator, one file at a time)
+    print(f"[ext_drive] Found {total_disk_files} files on disk: {already_uploaded_count} already in local DB, {total_pending} pending to upload.")
+
+    _broadcast("ext_scan_done", {
+        "run_id": run_id,
+        "total": total_pending,
+        "total_disk": total_disk_files,
+        "already_uploaded": already_uploaded_count,
+    })
+
+    if total_pending == 0:
+        run.overall_status = "completed"
+        run.end_time = datetime.datetime.now(datetime.timezone.utc)
+        db.commit()
+        db.close()
+        _broadcast("ext_upload_done", {
+            "run_id": run_id,
+            "uploaded": 0,
+            "failed": 0,
+            "skipped": already_uploaded_count,
+            "total": 0,
+            "total_disk": total_disk_files,
+        })
+        _broadcast("ext_run_completed", {
+            "run_id": run_id,
+            "status": "completed",
+        })
+        return
+
+    # Phase 2: Upload pending files
     uploaded = 0
     failed = 0
     skipped = 0
-    current_idx = 0
 
-    _broadcast("ext_upload_started", {"run_id": run_id, "total": total})
+    _broadcast("ext_upload_started", {
+        "run_id": run_id,
+        "total": total_pending,
+        "total_disk": total_disk_files,
+        "already_uploaded": already_uploaded_count,
+    })
 
-    for filepath in _iter_media_files(drive_root):
+    for current_idx, filepath in enumerate(pending_files, 1):
         # Stop check
         if _ext_stop_event.is_set():
-            _broadcast("ext_upload_stopped", {"at": current_idx, "total": total})
+            _broadcast("ext_upload_stopped", {"at": current_idx, "total": total_pending})
             break
 
-        # Pause check (blocks the thread, doesn't burn CPU)
+        # Pause check
         while _ext_pause_event.is_set():
             if _ext_stop_event.is_set():
                 break
             time.sleep(0.5)
-
-        current_idx += 1
-
-        # Deduplication — per-file DB lookup (not a huge in-memory set)
-        if _is_already_uploaded(db, filepath):
-            skipped += 1
-            _broadcast("ext_upload_progress", {
-                "run_id": run_id,
-                "filepath": filepath,
-                "current": current_idx,
-                "total": total,
-                "status": "skipped_already_uploaded",
-            })
-            continue
 
         # Create a DB record for this file
         record = ExtDriveFile(run_id=run_id, filepath=filepath, upload_status="pending")
@@ -336,12 +384,11 @@ def start_ext_drive_upload():
         db.commit()
         db.refresh(record)
 
-        # Flush live counters to the run row every 100 files so Session History
-        # shows real progress instead of 0 while the upload is running.
-        if current_idx % 100 == 0:
+        # Flush live counters to run row periodically
+        if current_idx % 25 == 0:
             run.uploaded_files = uploaded
             run.failed_files = failed
-            run.skipped_files = skipped
+            run.skipped_files = already_uploaded_count + skipped
             db.commit()
 
         file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
@@ -351,7 +398,9 @@ def start_ext_drive_upload():
             "filepath": filepath,
             "filename": os.path.basename(filepath),
             "current": current_idx,
-            "total": total,
+            "total": total_pending,
+            "already_uploaded": already_uploaded_count,
+            "total_disk": total_disk_files,
             "file_size": file_size,
             "status": "uploading",
         })
@@ -361,6 +410,7 @@ def start_ext_drive_upload():
         if upload_status == UPLOAD_NEW:
             speed_mbps = (file_size / (1024 * 1024)) / duration if duration > 0 else 0
             record.upload_status = "success"
+            uploaded_set.add(filepath)
             uploaded += 1
             _broadcast("ext_upload_speed", {
                 "speed_mbps": round(speed_mbps, 2),
@@ -370,7 +420,9 @@ def start_ext_drive_upload():
                 "filepath": filepath,
                 "filename": os.path.basename(filepath),
                 "current": current_idx,
-                "total": total,
+                "total": total_pending,
+                "already_uploaded": already_uploaded_count,
+                "total_disk": total_disk_files,
                 "file_size": file_size,
                 "status": "uploaded",
             })
@@ -378,6 +430,7 @@ def start_ext_drive_upload():
         elif upload_status == UPLOAD_DUPLICATE:
             record.upload_status = "success"
             record.error_message = "already_in_photos"
+            uploaded_set.add(filepath)
             uploaded += 1
             _broadcast("ext_upload_speed", {"speed_mbps": None})
             _broadcast("ext_upload_progress", {
@@ -385,7 +438,10 @@ def start_ext_drive_upload():
                 "filepath": filepath,
                 "filename": os.path.basename(filepath),
                 "current": current_idx,
-                "total": total,
+                "total": total_pending,
+                "already_uploaded": already_uploaded_count,
+                "total_disk": total_disk_files,
+                "file_size": file_size,
                 "status": "already_in_photos",
             })
 
@@ -399,7 +455,10 @@ def start_ext_drive_upload():
                 "filepath": filepath,
                 "filename": os.path.basename(filepath),
                 "current": current_idx,
-                "total": total,
+                "total": total_pending,
+                "already_uploaded": already_uploaded_count,
+                "total_disk": total_disk_files,
+                "file_size": file_size,
                 "status": "skipped",
                 "reason": err,
             })
@@ -414,7 +473,10 @@ def start_ext_drive_upload():
                 "filepath": filepath,
                 "filename": os.path.basename(filepath),
                 "current": current_idx,
-                "total": total,
+                "total": total_pending,
+                "already_uploaded": already_uploaded_count,
+                "total_disk": total_disk_files,
+                "file_size": file_size,
                 "status": "failed",
                 "reason": err,
             })
@@ -424,7 +486,7 @@ def start_ext_drive_upload():
     # Finalize run
     run.uploaded_files = uploaded
     run.failed_files = failed
-    run.skipped_files = skipped
+    run.skipped_files = already_uploaded_count + skipped
     run.end_time = datetime.datetime.now(datetime.timezone.utc)
 
     if _ext_stop_event.is_set():
@@ -441,8 +503,9 @@ def start_ext_drive_upload():
         "run_id": run_id,
         "uploaded": uploaded,
         "failed": failed,
-        "skipped": skipped,
-        "total": total,
+        "skipped": already_uploaded_count + skipped,
+        "total": total_pending,
+        "total_disk": total_disk_files,
     })
     _broadcast("ext_run_completed", {
         "run_id": run_id,

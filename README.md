@@ -58,14 +58,15 @@ http://<your-device-ip>:8000
 
 ## Permanent External Drive Setup (5.5TB HDD)
 
-The **Ext Drive** tab provides a separate upload path for the permanently attached external HDD (`/dev/sdc1`). This is completely independent from the USB copy workflow — it uploads media directly from the drive to Google Photos without staging.
+The **Ext Drive** tab provides a separate upload path for the permanently attached external HDD. This is completely independent from the USB copy workflow — it uploads media directly from the drive to Google Photos without staging.
 
 ### 1. Find the drive UUID
 
 ```bash
-sudo blkid /dev/sdc1
-# Example output:
-# /dev/sdc1: UUID="a1b2c3d4-..." TYPE="exfat" PARTLABEL="..."
+lsblk -f
+# Or:
+sudo blkid
+# Look for your drive's partition (e.g. LABEL="Media Drive", UUID="6A4B-B5F8", TYPE="exfat")
 ```
 
 Copy the UUID value.
@@ -85,10 +86,11 @@ sudo nano /etc/fstab
 Add this line (replace `<UUID>` with the actual UUID from step 1):
 
 ```
-UUID=<UUID>  /mnt/external_drive  auto  defaults,nofail,x-systemd.device-timeout=10  0  2
+UUID=<UUID>  /mnt/external_drive  exfat  defaults,nofail,x-systemd.automount,x-systemd.device-timeout=60  0  0
 ```
 
 > **`nofail`** — the system will still boot if the drive is disconnected.
+> **`x-systemd.device-timeout=60`** — gives large mechanical HDDs sufficient time to spin up upon boot/wake.
 
 ### 4. Mount now and verify
 
