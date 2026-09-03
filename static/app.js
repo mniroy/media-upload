@@ -126,8 +126,9 @@ function handleWsMessage(event) {
         case 'ext_scan_started':    onExtScanStarted(data); break;
         case 'ext_scan_done':       onExtScanDone(data); break;
         case 'ext_upload_started':  onExtUploadStarted(data); break;
-        case 'ext_upload_progress': onExtUploadProgress(data); break;
-        case 'ext_upload_speed':    onExtUploadSpeed(data); break;
+        case 'ext_upload_progress':      onExtUploadProgress(data); break;
+        case 'ext_file_byte_progress':   onExtFileByteProgress(data); break;
+        case 'ext_upload_speed':         onExtUploadSpeed(data); break;
         case 'ext_upload_stopped':  onExtUploadStopped(data); break;
         case 'ext_upload_done':     onExtUploadDone(data); break;
         case 'ext_run_completed':   onExtRunCompleted(data); break;
@@ -1148,7 +1149,7 @@ function showExtControls(active, paused) {
     }
 }
 
-function createExtFileRowElement(filename, fullpath, status, errorMsg) {
+function createExtFileRowElement(filename, fullpath, status, errorMsg, byteProgress) {
     const li = document.createElement('li');
     li.setAttribute('data-file', fullpath || filename);
     li.className = 'file-row-new';
@@ -1164,7 +1165,23 @@ function createExtFileRowElement(filename, fullpath, status, errorMsg) {
     }
 
     const dirHtml = dir ? `<div class="file-row-path" title="${escapeAttr(fullpath)}">${escapeHtml(dir)}</div>` : '';
-    const errHtml = (status === 'failed' && errorMsg) ? `<div style="font-size:10.5px;color:#f87171;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeAttr(errorMsg)}">${escapeHtml(errorMsg)}</div>` : '';
+    const errHtml = (status === 'failed' && errorMsg) ? `<div style="font-size:10.5px;color:#991b1b;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeAttr(errorMsg)}">${escapeHtml(errorMsg)}</div>` : '';
+
+    const isUploading = (status === 'uploading');
+    const pct = byteProgress ? byteProgress.pct : 0;
+    const bytesText = byteProgress ? `${formatBytes(byteProgress.bytes_sent)} / ${formatBytes(byteProgress.total_bytes)}` : '';
+
+    const progHtml = `
+        <div class="file-progress-wrap ${isUploading ? '' : 'hidden'}">
+            <div class="file-progress-track">
+                <div class="file-progress-fill" style="width: ${pct}%"></div>
+            </div>
+            <div class="file-progress-meta">
+                <span class="file-progress-pct">${pct}%</span>
+                <span class="file-progress-bytes">${bytesText}</span>
+            </div>
+        </div>
+    `;
 
     li.innerHTML = `
         ${fileIcon(filename)}
@@ -1172,15 +1189,16 @@ function createExtFileRowElement(filename, fullpath, status, errorMsg) {
             <div class="file-row-filename" title="${escapeAttr(filename)}">${escapeHtml(filename)}</div>
             ${dirHtml}
             ${errHtml}
+            ${progHtml}
         </div>
         <div class="ext-status-chip" style="flex-shrink:0">
-            ${extStatusChip(status, errorMsg)}
+            ${extStatusChip(status, errorMsg, pct)}
         </div>
     `;
     return li;
 }
 
-function addExtFileRow(filename, fullpath, status, errorMsg) {
+function addExtFileRow(filename, fullpath, status, errorMsg, byteProgress) {
     const list = document.getElementById('ext-files');
     if (!list) return;
     const emptyMsg = document.getElementById('ext-files-empty');
@@ -1190,11 +1208,16 @@ function addExtFileRow(filename, fullpath, status, errorMsg) {
     const existing = list.querySelector(`[data-file="${key}"]`);
     if (existing) {
         const chip = existing.querySelector('.ext-status-chip');
-        if (chip) chip.innerHTML = extStatusChip(status, errorMsg);
+        if (chip) chip.innerHTML = extStatusChip(status, errorMsg, byteProgress ? byteProgress.pct : undefined);
+        const wrap = existing.querySelector('.file-progress-wrap');
+        if (wrap) {
+            if (status === 'uploading') wrap.classList.remove('hidden');
+            else wrap.classList.add('hidden');
+        }
         return;
     }
 
-    const li = createExtFileRowElement(filename, fullpath, status, errorMsg);
+    const li = createExtFileRowElement(filename, fullpath, status, errorMsg, byteProgress);
     list.insertBefore(li, list.firstChild);
     while (list.children.length > 250) list.removeChild(list.lastChild);
 
@@ -1202,9 +1225,38 @@ function addExtFileRow(filename, fullpath, status, errorMsg) {
     if (countBadge) countBadge.textContent = `${list.children.length} files`;
 }
 
-function extStatusChip(status, errorMsg) {
+function onExtFileByteProgress(data) {
+    const list = document.getElementById('ext-files');
+    if (!list) return;
+    const emptyMsg = document.getElementById('ext-files-empty');
+    if (emptyMsg) emptyMsg.classList.add('hidden');
+
+    const filename = data.filename || (data.filepath || '').split('/').pop();
+    const key = CSS.escape(data.filepath || filename);
+    let existing = list.querySelector(`[data-file="${key}"]`);
+    if (!existing) {
+        addExtFileRow(filename, data.filepath || filename, 'uploading', null, data);
+        existing = list.querySelector(`[data-file="${key}"]`);
+    }
+    if (!existing) return;
+
+    const wrap = existing.querySelector('.file-progress-wrap');
+    const fill = existing.querySelector('.file-progress-fill');
+    const pctEl = existing.querySelector('.file-progress-pct');
+    const bytesEl = existing.querySelector('.file-progress-bytes');
+    const chip = existing.querySelector('.ext-status-chip');
+
+    if (wrap) wrap.classList.remove('hidden');
+    if (fill) fill.style.width = `${data.pct}%`;
+    if (pctEl) pctEl.textContent = `${data.pct}%`;
+    if (bytesEl) bytesEl.textContent = `${formatBytes(data.bytes_sent)} / ${formatBytes(data.total_bytes)}`;
+    if (chip) chip.innerHTML = extStatusChip('uploading', null, data.pct);
+}
+
+function extStatusChip(status, errorMsg, pct) {
     if (status === 'uploading') {
-        return '<span class="chip-status chip-uploading pulse-dot">⏳ Uploading…</span>';
+        const pctLabel = (pct !== undefined && pct !== null && pct > 0) ? ` ${pct}%` : '…';
+        return `<span class="chip-status chip-uploading pulse-dot">⏳ Uploading${pctLabel}</span>`;
     }
     if (status === 'uploaded' || status === 'success') {
         if (errorMsg === 'already_in_photos') {
@@ -1252,6 +1304,9 @@ async function fetchExtLiveFiles() {
             const li = createExtFileRowElement(fname, f.filepath, f.upload_status, f.error_message);
             list.appendChild(li);
         });
+        if (list.children.length > 0 && emptyMsg) {
+            emptyMsg.classList.add('hidden');
+        }
     } catch (e) {
         console.error('fetchExtLiveFiles error:', e);
     }

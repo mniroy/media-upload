@@ -405,7 +405,20 @@ def start_ext_drive_upload():
             "status": "uploading",
         })
 
-        upload_status, err, duration = upload_file(filepath)
+        def _on_byte_progress(bytes_sent, total_bytes):
+            pct = round((bytes_sent / max(total_bytes, 1)) * 100, 1)
+            _broadcast("ext_file_byte_progress", {
+                "run_id": run_id,
+                "filepath": filepath,
+                "filename": os.path.basename(filepath),
+                "bytes_sent": bytes_sent,
+                "total_bytes": total_bytes,
+                "pct": pct,
+                "current": current_idx,
+                "total": total_pending,
+            })
+
+        upload_status, err, duration = upload_file(filepath, on_progress=_on_byte_progress)
 
         if upload_status == UPLOAD_NEW:
             speed_mbps = (file_size / (1024 * 1024)) / duration if duration > 0 else 0
@@ -608,7 +621,20 @@ def reupload_failed_files(source_run_id: int):
             "status": "uploading",
         })
 
-        upload_status, err, duration = upload_file(filepath)
+        def _on_byte_progress(bytes_sent, total_bytes):
+            pct = round((bytes_sent / max(total_bytes, 1)) * 100, 1)
+            _broadcast("ext_file_byte_progress", {
+                "run_id": run_id,
+                "filepath": filepath,
+                "filename": os.path.basename(filepath),
+                "bytes_sent": bytes_sent,
+                "total_bytes": total_bytes,
+                "pct": pct,
+                "current": current_idx,
+                "total": total,
+            })
+
+        upload_status, err, duration = upload_file(filepath, on_progress=_on_byte_progress)
 
         if upload_status == UPLOAD_NEW:
             speed_mbps = (file_size / (1024 * 1024)) / duration if duration > 0 else 0

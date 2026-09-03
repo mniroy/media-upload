@@ -58,7 +58,7 @@ def get_auth_data():
     return None
 
 
-def upload_file(filepath: str) -> tuple[str, str, float]:
+def upload_file(filepath: str, on_progress=None) -> tuple[str, str, float]:
     """
     Upload a file to Google Photos.
 
@@ -79,15 +79,21 @@ def upload_file(filepath: str) -> tuple[str, str, float]:
     if not auth_data:
         return UPLOAD_FAILED, "Google Photos Auth Data not set in settings", 0.0
 
+    file_path = Path(filepath)
+    if not file_path.exists():
+        return UPLOAD_FAILED, f"File not found: {filepath}", 0.0
+
+    file_size = file_path.stat().st_size
+
     print(f"Uploading {filepath} via gpmc…")
     try:
         client = Client(auth_data=auth_data)
 
         # 2. Compute SHA-1 hash (same as gpmc does internally)
         _dummy_progress = Progress()
-        _dummy_task    = _dummy_progress.add_task("", total=None)
+        _dummy_task = _dummy_progress.add_task("", total=None)
         hash_bytes, hash_b64 = calculate_sha1_hash(
-            Path(filepath), _dummy_progress, _dummy_task
+            file_path, _dummy_progress, _dummy_task
         )
 
         # 3. Check if already in Google Photos BEFORE uploading (no upload cost)
@@ -96,18 +102,56 @@ def upload_file(filepath: str) -> tuple[str, str, float]:
             print(f"  → Already in Google Photos: {filepath}")
             return UPLOAD_DUPLICATE, remote_key, 0.0
 
-        # 4. Not in Photos → actually upload and time it
+        # 4. Not in Photos → stream upload with byte progress
         t0 = time.monotonic()
-        output = client.upload(target=filepath, show_progress=False)
+        upload_token = client.api.get_upload_token(hash_b64, file_size)
+
+        class ProgressStream:
+            def __init__(self, path_str, total, cb):
+                self.f = open(path_str, "rb")
+                self.total = total
+                self.uploaded = 0
+                self.cb = cb
+                self.last_update = 0
+
+            def read(self, size=-1):
+                chunk = self.f.read(size)
+                if chunk:
+                    self.uploaded += len(chunk)
+                    now = time.monotonic()
+                    if self.cb and (now - self.last_update >= 0.2 or self.uploaded == self.total):
+                        self.last_update = now
+                        try:
+                            self.cb(self.uploaded, self.total)
+                        except Exception:
+                            pass
+                return chunk
+
+            def __len__(self):
+                return self.total
+
+            def close(self):
+                self.f.close()
+
+        stream = ProgressStream(filepath, file_size, on_progress)
+        try:
+            upload_response = client.api.upload_file(file=stream, upload_token=upload_token)
+        finally:
+            stream.close()
+
+        last_modified = int(file_path.stat().st_mtime)
+        media_key = client.api.commit_upload(
+            upload_response_decoded=upload_response,
+            file_name=file_path.name,
+            sha1_hash=hash_bytes,
+            quality="original",
+            model="Pixel XL",
+            upload_timestamp=last_modified,
+        )
         t1 = time.monotonic()
         duration = t1 - t0
-
-        abs_path = os.path.abspath(filepath)
-        if abs_path in output or filepath in output:
-            print(f"  → Uploaded OK in {duration:.1f}s: {filepath}")
-            return UPLOAD_NEW, "", duration
-        else:
-            return UPLOAD_FAILED, f"Unexpected response: {output}", duration
+        print(f"  → Uploaded OK in {duration:.1f}s: {filepath}")
+        return UPLOAD_NEW, media_key or "", duration
 
     except ValueError as e:
         # gpmc raises ValueError for unsupported MIME types
