@@ -1171,8 +1171,9 @@ function createExtFileRowElement(filename, fullpath, status, errorMsg, byteProgr
     const pct = byteProgress ? byteProgress.pct : 0;
     const bytesText = byteProgress ? `${formatBytes(byteProgress.bytes_sent)} / ${formatBytes(byteProgress.total_bytes)}` : '';
 
-    const progHtml = `
-        <div class="file-progress-wrap ${isUploading ? '' : 'hidden'}">
+    // Only render progress bar if actively uploading
+    const progHtml = (isUploading && byteProgress) ? `
+        <div class="file-progress-wrap">
             <div class="file-progress-track">
                 <div class="file-progress-fill" style="width: ${pct}%"></div>
             </div>
@@ -1181,18 +1182,23 @@ function createExtFileRowElement(filename, fullpath, status, errorMsg, byteProgr
                 <span class="file-progress-bytes">${bytesText}</span>
             </div>
         </div>
-    `;
+    ` : '';
+
+    let displayName = filename;
+    if (!displayName || displayName === '.') {
+        displayName = fullpath ? fullpath.split('/').filter(Boolean).pop() : 'Unknown file';
+    }
 
     li.innerHTML = `
-        ${fileIcon(filename)}
+        ${fileIcon(displayName)}
         <div style="flex:1;min-width:0">
-            <div class="file-row-filename" title="${escapeAttr(filename)}">${escapeHtml(filename)}</div>
+            <div class="file-row-filename" title="${escapeAttr(displayName)}">${escapeHtml(displayName)}</div>
             ${dirHtml}
             ${errHtml}
             ${progHtml}
         </div>
         <div class="ext-status-chip" style="flex-shrink:0">
-            ${extStatusChip(status, errorMsg, pct)}
+            ${extStatusChip(status, errorMsg, isUploading ? pct : undefined)}
         </div>
     `;
     return li;
@@ -1207,12 +1213,12 @@ function addExtFileRow(filename, fullpath, status, errorMsg, byteProgress) {
     const key = CSS.escape(fullpath || filename);
     const existing = list.querySelector(`[data-file="${key}"]`);
     if (existing) {
+        const isUploading = (status === 'uploading');
         const chip = existing.querySelector('.ext-status-chip');
-        if (chip) chip.innerHTML = extStatusChip(status, errorMsg, byteProgress ? byteProgress.pct : undefined);
+        if (chip) chip.innerHTML = extStatusChip(status, errorMsg, isUploading && byteProgress ? byteProgress.pct : undefined);
         const wrap = existing.querySelector('.file-progress-wrap');
-        if (wrap) {
-            if (status === 'uploading') wrap.classList.remove('hidden');
-            else wrap.classList.add('hidden');
+        if (!isUploading && wrap) {
+            wrap.remove(); // Remove progress bar completely once uploaded
         }
         return;
     }
@@ -1231,7 +1237,10 @@ function onExtFileByteProgress(data) {
     const emptyMsg = document.getElementById('ext-files-empty');
     if (emptyMsg) emptyMsg.classList.add('hidden');
 
-    const filename = data.filename || (data.filepath || '').split('/').pop();
+    let filename = data.filename;
+    if (!filename || filename === '.') {
+        filename = (data.filepath || '').split('/').filter(Boolean).pop();
+    }
     const key = CSS.escape(data.filepath || filename);
     let existing = list.querySelector(`[data-file="${key}"]`);
     if (!existing) {
@@ -1240,16 +1249,33 @@ function onExtFileByteProgress(data) {
     }
     if (!existing) return;
 
-    const wrap = existing.querySelector('.file-progress-wrap');
-    const fill = existing.querySelector('.file-progress-fill');
-    const pctEl = existing.querySelector('.file-progress-pct');
-    const bytesEl = existing.querySelector('.file-progress-bytes');
-    const chip = existing.querySelector('.ext-status-chip');
+    let wrap = existing.querySelector('.file-progress-wrap');
+    if (!wrap) {
+        const textCol = existing.children[1];
+        if (textCol) {
+            wrap = document.createElement('div');
+            wrap.className = 'file-progress-wrap';
+            wrap.innerHTML = `
+                <div class="file-progress-track">
+                    <div class="file-progress-fill" style="width: ${data.pct}%"></div>
+                </div>
+                <div class="file-progress-meta">
+                    <span class="file-progress-pct">${data.pct}%</span>
+                    <span class="file-progress-bytes">${formatBytes(data.bytes_sent)} / ${formatBytes(data.total_bytes)}</span>
+                </div>
+            `;
+            textCol.appendChild(wrap);
+        }
+    } else {
+        const fill = wrap.querySelector('.file-progress-fill');
+        const pctEl = wrap.querySelector('.file-progress-pct');
+        const bytesEl = wrap.querySelector('.file-progress-bytes');
+        if (fill) fill.style.width = `${data.pct}%`;
+        if (pctEl) pctEl.textContent = `${data.pct}%`;
+        if (bytesEl) bytesEl.textContent = `${formatBytes(data.bytes_sent)} / ${formatBytes(data.total_bytes)}`;
+    }
 
-    if (wrap) wrap.classList.remove('hidden');
-    if (fill) fill.style.width = `${data.pct}%`;
-    if (pctEl) pctEl.textContent = `${data.pct}%`;
-    if (bytesEl) bytesEl.textContent = `${formatBytes(data.bytes_sent)} / ${formatBytes(data.total_bytes)}`;
+    const chip = existing.querySelector('.ext-status-chip');
     if (chip) chip.innerHTML = extStatusChip('uploading', null, data.pct);
 }
 
