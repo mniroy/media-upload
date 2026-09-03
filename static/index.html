@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=6">
+    <link rel="stylesheet" href="/static/style.css?v=7">
 </head>
 <body>
 
@@ -149,6 +149,28 @@
                         <span id="ext-storage-total">— total</span>
                     </div>
                     <span id="ext-storage-mount-badge" class="ext-mount-inline">checking&hellip;</span>
+                </div>
+                <div class="storage-widget network-widget" id="net-speed-widget">
+                    <div class="storage-header">
+                        <span class="storage-label storage-label-net">Network Speed</span>
+                        <span class="badge-pulse" style="font-size:9.5px;padding:0">&#9679; Live</span>
+                    </div>
+                    <div class="net-stats-grid">
+                        <div class="net-stat-item">
+                            <div class="net-stat-tag">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="3"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+                                <span>Down</span>
+                            </div>
+                            <span id="net-speed-rx" class="net-stat-num">0.00 <small>MB/s</small></span>
+                        </div>
+                        <div class="net-stat-item">
+                            <div class="net-stat-tag">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="3"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                                <span>Up</span>
+                            </div>
+                            <span id="net-speed-tx" class="net-stat-num">0.00 <small>MB/s</small></span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </aside>
@@ -541,6 +563,6 @@
         </main>
     </div>
 
-    <script src="/static/app.js?v=6"></script>
+    <script src="/static/app.js?v=7"></script>
 </body>
 </html>

@@ -249,6 +249,64 @@ body {
 
 .ext-mount-inline { font-size: 10px; font-weight: 600; color: var(--text-faint); }
 
+.network-widget {
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+}
+
+.storage-label-net {
+    color: #38bdf8;
+}
+
+.net-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.net-stat-item {
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.net-stat-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.net-stat-tag {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+}
+
+.net-stat-num {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+}
+
+.net-stat-num small {
+    font-size: 9.5px;
+    font-weight: 500;
+    color: #94a3b8;
+    margin-left: 2px;
+}
+
 /* =============================================================
    MAIN CONTENT
    ============================================================= */

@@ -1,3 +1,6 @@
+import os
+import time
+import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
@@ -46,7 +49,46 @@ _live_state = {
     "ext_upload_total": 0,
     "ext_speed_mbps": None,
     "ext_error": None,
+    # --- Live System Network Throughput ---
+    "net_rx_mb_s": 0.0,        # Download MB/s
+    "net_tx_mb_s": 0.0,        # Upload MB/s
 }
+
+class NetworkMonitor:
+    def __init__(self):
+        self.last_time = time.time()
+        self.last_rx, self.last_tx = self._read_bytes()
+
+    def _read_bytes(self):
+        rx, tx = 0, 0
+        try:
+            with open("/proc/net/dev", "r") as f:
+                lines = f.readlines()[2:]
+            for line in lines:
+                parts = line.strip().split()
+                if not parts:
+                    continue
+                iface = parts[0].rstrip(":")
+                if iface == "lo" or iface.startswith("docker") or iface.startswith("veth") or iface.startswith("br-"):
+                    continue
+                rx += int(parts[1])
+                tx += int(parts[9])
+        except Exception:
+            pass
+        return rx, tx
+
+    def get_speed(self):
+        now = time.time()
+        rx, tx = self._read_bytes()
+        dt = max(now - self.last_time, 0.001)
+        rx_speed = max(0.0, (rx - self.last_rx) / dt / (1024 * 1024))
+        tx_speed = max(0.0, (tx - self.last_tx) / dt / (1024 * 1024))
+        self.last_time = now
+        self.last_rx = rx
+        self.last_tx = tx
+        return rx_speed, tx_speed
+
+net_monitor = NetworkMonitor()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -74,7 +116,29 @@ async def lifespan(app: FastAPI):
         print(f"[startup] Marked {len(stale)} stale ext drive session(s) as 'interrupted'")
     db2.close()
 
+    # Background real-time network throughput sampler (1s interval)
+    async def _net_stats_loop():
+        while True:
+            try:
+                await asyncio.sleep(1.0)
+                rx, tx = net_monitor.get_speed()
+                _live_state["net_rx_mb_s"] = round(rx, 2)
+                _live_state["net_tx_mb_s"] = round(tx, 2)
+                if active_websockets:
+                    await broadcast_event("net_speed", {
+                        "rx_mb_s": _live_state["net_rx_mb_s"],
+                        "tx_mb_s": _live_state["net_tx_mb_s"],
+                    })
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                pass
+
+    net_task = asyncio.create_task(_net_stats_loop())
+
     yield
+
+    net_task.cancel()
 
 app = FastAPI(lifespan=lifespan)
 
@@ -307,6 +371,14 @@ def get_storage():
     import shutil
     total, used, free = shutil.disk_usage("/var/lib/media_upload")
     return {"total": total, "used": used, "free": free}
+
+@app.get("/api/system/network")
+def get_network_speed():
+    """Return real-time download and upload speed in MB/s."""
+    return {
+        "rx_mb_s": _live_state.get("net_rx_mb_s", 0.0),
+        "tx_mb_s": _live_state.get("net_tx_mb_s", 0.0)
+    }
 
 # ---------------------------------------------------------------------------
 # External Drive — completely separate from USB workflow

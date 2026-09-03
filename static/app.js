@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial data
     fetchStorage();
+    fetchNetworkSpeed();
     fetchSettings();
     fetchExtDriveStatus();   // populate sidebar ext storage on load
     connectWebSocket();
@@ -36,6 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (document.visibilityState === 'visible') {
             fetch('/api/state').then(r => r.json()).then(s => onStateSync(s)).catch(() => {});
             fetchStorage();
+            fetchNetworkSpeed();
         }
     });
 
@@ -130,6 +132,7 @@ function handleWsMessage(event) {
         case 'ext_upload_done':     onExtUploadDone(data); break;
         case 'ext_run_completed':   onExtRunCompleted(data); break;
         case 'ext_drive_status':    onExtDriveStatus(data); break;
+        case 'net_speed':           onNetSpeed(data); break;
     }
 }
 
@@ -140,6 +143,10 @@ function onStateSync(s) {
     const phase = s.phase || 'idle';
     currentDevice = s.device;
     updateAutoCopyBadges(s.auto_copy_enabled);
+
+    if (s.net_rx_mb_s !== undefined || s.net_tx_mb_s !== undefined) {
+        onNetSpeed({ rx_mb_s: s.net_rx_mb_s, tx_mb_s: s.net_tx_mb_s });
+    }
 
     if (s.usb_info && s.device && s.device !== 'local_disk') {
         onUsbInfo({ device: s.device, ...s.usb_info });
@@ -943,6 +950,32 @@ function updateExtStorageSidebar(data) {
         const pct = (data.used / data.total * 100);
         if (bar) bar.style.width = pct + '%';
     }
+}
+
+function onNetSpeed(data) {
+    const rx = data.rx_mb_s || 0;
+    const tx = data.tx_mb_s || 0;
+    const rxEl = document.getElementById('net-speed-rx');
+    const txEl = document.getElementById('net-speed-tx');
+    if (rxEl) {
+        if (rx >= 1.0) rxEl.innerHTML = `${rx.toFixed(2)} <small>MB/s</small>`;
+        else if (rx > 0.005) rxEl.innerHTML = `${(rx * 1024).toFixed(0)} <small>KB/s</small>`;
+        else rxEl.innerHTML = `0.00 <small>MB/s</small>`;
+    }
+    if (txEl) {
+        if (tx >= 1.0) txEl.innerHTML = `${tx.toFixed(2)} <small>MB/s</small>`;
+        else if (tx > 0.005) txEl.innerHTML = `${(tx * 1024).toFixed(0)} <small>KB/s</small>`;
+        else txEl.innerHTML = `0.00 <small>MB/s</small>`;
+    }
+}
+
+async function fetchNetworkSpeed() {
+    try {
+        const res = await fetch('/api/system/network');
+        if (!res.ok) return;
+        const data = await res.json();
+        onNetSpeed(data);
+    } catch (e) {}
 }
 
 async function fetchExtDriveHistory() {
