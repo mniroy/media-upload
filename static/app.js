@@ -86,7 +86,7 @@ function switchTab(tab) {
 
     // Lazy load
     if (tab === 'history') fetchHistory();
-    if (tab === 'extdrive') { fetchExtDriveStatus(); fetchExtDriveHistory(); }
+    if (tab === 'extdrive') { fetchExtDriveStatus(); fetchExtDriveHistory(); fetchExtLiveFiles(); }
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +210,9 @@ function onStateSync(s) {
         case 'failed': setExtPhaseBadge('Error', 'red'); setExtStatusText(`Error: ${s.ext_error || 'Unknown error'}`); showExtControls(false, false); break;
         case 'idle': default: break;
     }
+    
+    // Automatically load live feed files for the current session
+    fetchExtLiveFiles();
 }
 
 // ---------------------------------------------------------------------------
@@ -503,15 +506,30 @@ function updateAutoCopyBadges(enabled) {
 // ---------------------------------------------------------------------------
 function fileIcon(filename) {
     const ext = (filename || '').split('.').pop().toLowerCase();
-    const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'dng'].includes(ext);
-    const color = isVideo ? '#3d6b9e' : '#a0a0a0';
-    const bg = isVideo ? '#eef2f8' : '#f7f6f3';
-    return `<div style="width:28px;height:28px;border-radius:7px;background:${bg};border:1px solid #e8e5e0;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-        <svg width="13" height="13" fill="none" stroke="${color}" stroke-width="2" viewBox="0 0 24 24">
-        ${isVideo
-            ? '<path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>'
-            : '<path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>'}
-        </svg></div>`;
+    const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'm4v', '3gp', 'wmv', 'flv', 'mts', 'm2ts', 'ts'].includes(ext);
+    const isRaw = ['dng', 'raw', 'arw', 'cr2', 'cr3', 'nef', 'orf', 'rw2', 'pef', 'srw', 'raf'].includes(ext);
+    
+    if (isVideo) {
+        return `<div style="width:28px;height:28px;border-radius:6px;background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="13" height="13" fill="none" stroke="#c084fc" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+        </div>`;
+    }
+    if (isRaw) {
+        return `<div style="width:28px;height:28px;border-radius:6px;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="13" height="13" fill="none" stroke="#fbbf24" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+        </div>`;
+    }
+    return `<div style="width:28px;height:28px;border-radius:6px;background:rgba(56,189,248,0.15);border:1px solid rgba(56,189,248,0.3);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="13" height="13" fill="none" stroke="#38bdf8" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+        </svg>
+    </div>`;
 }
 
 function statusChip(status) {
@@ -766,6 +784,7 @@ function onExtUploadStarted(data) {
     setExtStatusText(`Uploading ${extState.total.toLocaleString()} pending files (${extState.alreadyUploaded.toLocaleString()} already in local DB)…`);
     showExtControls(true, false);
     updateExtRing(0, extState.total);
+    fetchExtLiveFiles();
 }
 
 function onExtUploadProgress(data) {
@@ -782,7 +801,9 @@ function onExtUploadProgress(data) {
         failed: `⚠ Failed: ${filename}`
     };
     setExtStatusText(msgs[status] || `Processing: ${filename}`);
-    if (status !== 'uploading' && status !== 'skipped_already_uploaded') addExtFileRow(filename, data.filepath || filename, status);
+    if (status !== 'uploading' && status !== 'skipped_already_uploaded') {
+        addExtFileRow(filename, data.filepath || filename, status, data.error_message);
+    }
 }
 
 function onExtUploadSpeed(data) {
@@ -930,7 +951,7 @@ async function fetchExtDriveHistory() {
         const runs = await res.json();
         const tbody = document.getElementById('ext-history-body');
         if (!tbody) return;
-        if (!runs || runs.length === 0) { tbody.innerHTML = '<tr><td colspan="7" class="history-empty">No sessions yet.</td></tr>'; return; }
+        if (!runs || runs.length === 0) { tbody.innerHTML = '<tr><td colspan="8" class="history-empty">No sessions yet.</td></tr>'; return; }
         tbody.innerHTML = '';
         runs.forEach(run => {
             const sc = run.overall_status === 'completed' ? 'badge badge-green'
@@ -941,15 +962,16 @@ async function fetchExtDriveHistory() {
             const failedCount = run.failed_files || 0;
             const actionsHtml = failedCount > 0
                 ? `<button onclick="viewFailedFiles(${run.id})" style="font-size:11px;padding:3px 8px;border-radius:5px;background:rgba(239,68,68,0.12);color:#ef4444;border:none;cursor:pointer;font-weight:600">⚠ ${failedCount} Failed</button>`
-                : `<span style="color:#4a5068;font-size:11px">—</span>`;
+                : `<span style="color:#64748b;font-size:11px">—</span>`;
             const tr = document.createElement('tr');
             tr.id = `hist-row-${run.id}`;
             tr.innerHTML = `
-                <td style="color:#7c8399">#${run.id}</td>
+                <td style="color:#94a3b8;font-weight:600">#${run.id}</td>
                 <td>${formatDateTime(run.start_time)}</td>
-                <td style="font-weight:700">${(run.total_files || 0).toLocaleString()}</td>
-                <td style="font-weight:700;color:#22c55e">${(run.uploaded_files || 0).toLocaleString()}</td>
-                <td style="font-weight:700;color:#ef4444">${failedCount.toLocaleString()}</td>
+                <td style="font-weight:700;color:#f8fafc">${(run.total_files || 0).toLocaleString()}</td>
+                <td style="font-weight:700;color:#4ade80">${(run.uploaded_files || 0).toLocaleString()}</td>
+                <td style="font-weight:700;color:#f87171">${failedCount.toLocaleString()}</td>
+                <td style="font-weight:600;color:#94a3b8">${(run.skipped_files || 0).toLocaleString()}</td>
                 <td><span class="${sc}">${run.overall_status}</span></td>
                 <td>${actionsHtml}</td>
             `;
@@ -972,7 +994,7 @@ async function viewFailedFiles(runId) {
     if (!anchorRow || !tbody) return;
     const panelRow = document.createElement('tr');
     panelRow.dataset.runId = String(runId);
-    panelRow.innerHTML = `<td colspan="7" style="padding:0;background:rgba(239,68,68,0.05);border-top:1px solid rgba(239,68,68,0.15)">
+    panelRow.innerHTML = `<td colspan="8" style="padding:0;background:rgba(239,68,68,0.05);border-top:1px solid rgba(239,68,68,0.15)">
         <div style="padding:12px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                 <span style="font-size:12px;font-weight:700;color:#ef4444">⚠ Failed Files — Session #${runId}</span>
@@ -1093,33 +1115,113 @@ function showExtControls(active, paused) {
     }
 }
 
-function addExtFileRow(filename, fullpath, status) {
+function createExtFileRowElement(filename, fullpath, status, errorMsg) {
+    const li = document.createElement('li');
+    li.setAttribute('data-file', fullpath || filename);
+    li.className = 'file-row-new';
+
+    // Extract clean relative directory
+    let dir = '';
+    if (fullpath) {
+        const parts = fullpath.replace('/mnt/external_drive/', '').split('/');
+        if (parts.length > 1) {
+            parts.pop();
+            dir = parts.join(' / ');
+        }
+    }
+
+    const dirHtml = dir ? `<div class="file-row-path" title="${escapeAttr(fullpath)}">${escapeHtml(dir)}</div>` : '';
+    const errHtml = (status === 'failed' && errorMsg) ? `<div style="font-size:10.5px;color:#f87171;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeAttr(errorMsg)}">${escapeHtml(errorMsg)}</div>` : '';
+
+    li.innerHTML = `
+        ${fileIcon(filename)}
+        <div style="flex:1;min-width:0">
+            <div class="file-row-filename" title="${escapeAttr(filename)}">${escapeHtml(filename)}</div>
+            ${dirHtml}
+            ${errHtml}
+        </div>
+        <div class="ext-status-chip" style="flex-shrink:0">
+            ${extStatusChip(status, errorMsg)}
+        </div>
+    `;
+    return li;
+}
+
+function addExtFileRow(filename, fullpath, status, errorMsg) {
     const list = document.getElementById('ext-files');
     if (!list) return;
     const emptyMsg = document.getElementById('ext-files-empty');
     if (emptyMsg) emptyMsg.classList.add('hidden');
+
     const key = CSS.escape(fullpath || filename);
     const existing = list.querySelector(`[data-file="${key}"]`);
-    if (existing) { const chip = existing.querySelector('.ext-status-chip'); if (chip) chip.innerHTML = extStatusChip(status); return; }
-    const li = document.createElement('li');
-    li.setAttribute('data-file', fullpath || filename);
-    li.className = 'file-row-new';
-    li.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04)';
-    li.innerHTML = `${fileIcon(filename)}<div style="flex:1;min-width:0"><p style="font-size:12px;font-weight:600;color:#e8eaf0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(filename)}</p><span class="ext-status-chip">${extStatusChip(status)}</span></div>`;
+    if (existing) {
+        const chip = existing.querySelector('.ext-status-chip');
+        if (chip) chip.innerHTML = extStatusChip(status, errorMsg);
+        return;
+    }
+
+    const li = createExtFileRowElement(filename, fullpath, status, errorMsg);
     list.insertBefore(li, list.firstChild);
-    while (list.children.length > 60) list.removeChild(list.lastChild);
+    while (list.children.length > 250) list.removeChild(list.lastChild);
+
+    const countBadge = document.getElementById('ext-feed-count');
+    if (countBadge) countBadge.textContent = `${list.children.length} files`;
 }
 
-function extStatusChip(status) {
-    const map = {
-        uploading:                '<span style="font-size:11px;font-weight:600;color:#f59e0b" class="pulse-dot">(Uploading…)</span>',
-        uploaded:                 '<span style="font-size:11px;font-weight:600;color:#22c55e">✓ Uploaded</span>',
-        already_in_photos:        '<span style="font-size:11px;font-weight:600;color:#38bdf8">☁ Already in Photos</span>',
-        skipped:                  '<span style="font-size:11px;font-weight:600;color:#7c8399">— Skipped</span>',
-        skipped_already_uploaded: '<span style="font-size:11px;font-weight:600;color:#7c8399">— Previously uploaded</span>',
-        failed:                   '<span style="font-size:11px;font-weight:600;color:#ef4444">⚠ Failed</span>',
-    };
-    return map[status] || '<span style="font-size:11px;color:#4a5068">(Queued)</span>';
+function extStatusChip(status, errorMsg) {
+    if (status === 'uploading') {
+        return '<span class="chip-status chip-uploading pulse-dot">⏳ Uploading…</span>';
+    }
+    if (status === 'uploaded' || status === 'success') {
+        if (errorMsg === 'already_in_photos') {
+            return '<span class="chip-status chip-already">☁ Already in Photos</span>';
+        }
+        return '<span class="chip-status chip-uploaded">✓ Uploaded</span>';
+    }
+    if (status === 'already_in_photos') {
+        return '<span class="chip-status chip-already">☁ Already in Photos</span>';
+    }
+    if (status === 'failed') {
+        const title = errorMsg ? ` title="${escapeAttr(errorMsg)}"` : '';
+        return `<span class="chip-status chip-failed"${title}>⚠ Failed</span>`;
+    }
+    if (status === 'skipped' || status === 'skipped_already_uploaded') {
+        const title = errorMsg ? ` title="${escapeAttr(errorMsg)}"` : '';
+        return `<span class="chip-status chip-skipped"${title}>— Skipped</span>`;
+    }
+    return '<span class="chip-status chip-queued">(Queued)</span>';
+}
+
+async function fetchExtLiveFiles() {
+    try {
+        const res = await fetch('/api/extdrive/live_files?limit=150');
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = document.getElementById('ext-files');
+        const emptyMsg = document.getElementById('ext-files-empty');
+        const countBadge = document.getElementById('ext-feed-count');
+        if (!list) return;
+
+        if (!data.files || data.files.length === 0) {
+            list.innerHTML = '';
+            if (emptyMsg) emptyMsg.classList.remove('hidden');
+            if (countBadge) countBadge.textContent = '0 files';
+            return;
+        }
+
+        if (emptyMsg) emptyMsg.classList.add('hidden');
+        if (countBadge) countBadge.textContent = `${data.files.length} files`;
+
+        list.innerHTML = '';
+        data.files.forEach(f => {
+            const fname = f.filename || (f.filepath ? f.filepath.split('/').pop() : '');
+            const li = createExtFileRowElement(fname, f.filepath, f.upload_status, f.error_message);
+            list.appendChild(li);
+        });
+    } catch (e) {
+        console.error('fetchExtLiveFiles error:', e);
+    }
 }
 
 // ---------------------------------------------------------------------------

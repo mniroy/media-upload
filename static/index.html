@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=5">
+    <link rel="stylesheet" href="/static/style.css?v=6">
 </head>
 <body>
 
@@ -394,8 +394,8 @@
                         <p id="ext-status-text" class="card-status">Ready — click "Start" to begin.</p>
                     </div>
 
-                    <!-- Live feed + history -->
-                    <div class="station-card">
+                    <!-- Live feed (Dedicated spacious card) -->
+                    <div class="station-card feed-card-large">
                         <div class="card-header">
                             <div class="card-header-left">
                                 <div class="card-icon-sm icon-amber">
@@ -405,39 +405,53 @@
                                     </svg>
                                 </div>
                                 <span class="card-title">Live Feed</span>
+                                <span id="ext-feed-count" class="feed-count-badge">0 files</span>
                             </div>
-                            <span class="badge-pulse">&#9679; Live</span>
+                            <div class="card-header-right" style="display:flex;align-items:center;gap:8px">
+                                <button onclick="fetchExtLiveFiles()" class="btn-ghost-xs" title="Reload live feed">&#8635; Refresh Feed</button>
+                                <span class="badge-pulse">&#9679; Live</span>
+                            </div>
                         </div>
 
-                        <div class="file-feed" style="flex:1;min-height:0">
-                            <ul id="ext-files" class="file-list"></ul>
-                            <p id="ext-files-empty" class="file-empty">No files processed yet.</p>
+                        <div class="file-feed file-feed-expanded">
+                            <ul id="ext-files" class="file-list file-list-expanded"></ul>
+                            <p id="ext-files-empty" class="file-empty">No files processed in this session yet.</p>
                         </div>
+                    </div>
+                </div>
 
-                        <div class="inline-history">
-                            <div class="inline-history-header">
-                                <span class="file-feed-label" style="margin:0">Session History</span>
-                                <button onclick="fetchExtDriveHistory()" class="btn-ghost-xs">Refresh</button>
+                <!-- Session History (Clean full-width section below) -->
+                <div class="station-card history-full-card" style="margin-top: 16px;">
+                    <div class="card-header">
+                        <div class="card-header-left">
+                            <div class="card-icon-sm icon-purple">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <polyline points="12 6 12 12 16 14"/>
+                                </svg>
                             </div>
-                            <div class="history-table-wrap">
-                                <table class="history-table">
-                                    <thead>
-                                        <tr>
-                                            <th>#</th>
-                                            <th>Started</th>
-                                            <th>Total</th>
-                                            <th>&#10003;</th>
-                                            <th>&#10007;</th>
-                                            <th>Status</th>
-                                            <th></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="ext-history-body">
-                                        <tr><td colspan="7" class="history-empty">No sessions yet.</td></tr>
-                                    </tbody>
-                                </table>
-                            </div>
+                            <span class="card-title">Session History</span>
                         </div>
+                        <button onclick="fetchExtDriveHistory()" class="btn-ghost-xs">&#8635; Refresh History</button>
+                    </div>
+                    <div class="history-table-wrap history-table-wrap-expanded">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Started</th>
+                                    <th>Target Files</th>
+                                    <th>&#10003; Uploaded</th>
+                                    <th>&#10007; Failed</th>
+                                    <th>Skipped</th>
+                                    <th>Status</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="ext-history-body">
+                                <tr><td colspan="8" class="history-empty">No sessions yet.</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -527,6 +541,6 @@
         </main>
     </div>
 
-    <script src="/static/app.js?v=5"></script>
+    <script src="/static/app.js?v=6"></script>
 </body>
 </html>

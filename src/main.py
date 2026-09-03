@@ -389,6 +389,41 @@ def extdrive_run_files(run_id: int, status: Optional[str] = None, limit: int = 2
     db.close()
     return result
 
+@app.get("/api/extdrive/live_files")
+def extdrive_live_files(limit: int = 150):
+    """Return recent files from the current (or most recent) ext drive session for persistence."""
+    from src.database import ExtDriveRun as EDR, ExtDriveFile as EDF
+    db = SessionLocal()
+    run = None
+    if _live_state.get("ext_run_id"):
+        run = db.query(EDR).filter(EDR.id == _live_state["ext_run_id"]).first()
+    if not run:
+        run = db.query(EDR).order_by(EDR.id.desc()).first()
+    if not run:
+        db.close()
+        return {"run_id": None, "files": []}
+
+    files = db.query(EDF).filter(
+        EDF.run_id == run.id
+    ).order_by(EDF.id.desc()).limit(limit).all()
+
+    result = [
+        {
+            "id": f.id,
+            "filepath": f.filepath,
+            "filename": f.filepath.split("/")[-1] if f.filepath else "",
+            "upload_status": f.upload_status,
+            "error_message": f.error_message,
+        }
+        for f in files
+    ]
+    db.close()
+    return {
+        "run_id": run.id,
+        "run_status": run.overall_status,
+        "files": result
+    }
+
 @app.post("/api/extdrive/runs/{run_id}/reupload")
 async def extdrive_reupload_failed(run_id: int, background_tasks: BackgroundTasks):
     """Re-upload all failed files from a specific ext drive session."""
