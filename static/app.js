@@ -1190,14 +1190,13 @@ function createExtFileRowElement(filename, fullpath, status, errorMsg, byteProgr
     }
 
     li.innerHTML = `
-        ${fileIcon(displayName)}
-        <div style="flex:1;min-width:0">
+        <div class="file-row-main" style="flex:1;min-width:0">
             <div class="file-row-filename" title="${escapeAttr(displayName)}">${escapeHtml(displayName)}</div>
             ${dirHtml}
             ${errHtml}
             ${progHtml}
         </div>
-        <div class="ext-status-chip" style="flex-shrink:0">
+        <div class="ext-status-chip">
             ${extStatusChip(status, errorMsg, isUploading ? pct : undefined)}
         </div>
     `;
@@ -1251,7 +1250,7 @@ function onExtFileByteProgress(data) {
 
     let wrap = existing.querySelector('.file-progress-wrap');
     if (!wrap) {
-        const textCol = existing.children[1];
+        const textCol = existing.querySelector('.file-row-main');
         if (textCol) {
             wrap = document.createElement('div');
             wrap.className = 'file-progress-wrap';

@@ -757,15 +757,27 @@ body {
 }
 
 /* Status Chips with high contrast & soft pill background */
+.ext-status-chip {
+    flex-shrink: 0;
+    min-width: 135px;
+    display: flex;
+    justify-content: flex-end;
+}
+
 .chip-status {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 4px;
     font-size: 11px;
     font-weight: 600;
-    padding: 2px 7px;
+    padding: 3px 8px;
     border-radius: 4px;
     white-space: nowrap;
+    width: 130px;
+    text-align: center;
+    box-sizing: border-box;
+    font-variant-numeric: tabular-nums;
 }
 
 .chip-uploaded {
