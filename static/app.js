@@ -754,12 +754,24 @@ async function systemShutdown() {
 // EXTERNAL DRIVE STATION — completely separate workflow
 // =============================================================================
 
-const extState = { phase: 'idle', runId: null, current: 0, total: 0, speedMbps: null };
+const extState = {
+    phase: 'idle',
+    runId: null,
+    current: 0,
+    total: 0,
+    speedMbps: null,
+    uploadedBytes: 0,
+    currentFileBytesSent: 0,
+    currentFileSize: 0,
+    fileSizeSamples: []
+};
 let extSpeedSamples = [];
 
 function onExtRunStarted(data) {
     extState.phase = 'scanning'; extState.runId = data.run_id;
     extState.current = 0; extState.total = 0; extSpeedSamples = [];
+    extState.uploadedBytes = 0; extState.currentFileBytesSent = 0;
+    extState.currentFileSize = 0; extState.fileSizeSamples = [];
     setExtPhaseBadge('Scanning…', 'amber');
     setExtStatusText('Scanning external drive for media files…');
     showExtControls(true, false); setExtNavBadge(true);
@@ -797,9 +809,22 @@ function onExtUploadStarted(data) {
 
 function onExtUploadProgress(data) {
     const status = data.status || 'uploading';
-    const filename = data.filename || (data.filepath || '').split('/').pop();
+    const filename = data.filename || (data.filepath || '').split('/').filter(Boolean).pop();
     extState.current = data.current || 0;
     extState.total = data.total || extState.total;
+
+    if (data.file_size && data.file_size > 0) {
+        extState.fileSizeSamples.push(data.file_size);
+        if (extState.fileSizeSamples.length > 500) extState.fileSizeSamples.shift();
+    }
+
+    if (status === 'uploaded' || status === 'already_in_photos') {
+        const sz = data.file_size || extState.currentFileSize || 0;
+        extState.uploadedBytes += sz;
+        extState.currentFileBytesSent = 0;
+        extState.currentFileSize = 0;
+    }
+
     updateExtRing(extState.current, extState.total);
     const msgs = {
         uploading: `Uploading (${extState.current}/${extState.total}): ${filename}`,
@@ -1086,19 +1111,40 @@ async function reuploadFailed(runId) {
 // --- Ext Drive UI helpers ---
 function updateExtRing(done, total) {
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-    // Legacy compat
     const pctEl = document.getElementById('ext-pct');
     const countEl = document.getElementById('ext-count');
+    const bytesEl = document.getElementById('ext-bytes') || document.getElementById('ext-speed');
+
     if (pctEl) pctEl.textContent = pct + '%';
     if (countEl) countEl.textContent = `${done.toLocaleString()} / ${total.toLocaleString()} files`;
+
     // Flat bar
     const segDone = document.getElementById('ext-seg-done');
     const segRem  = document.getElementById('ext-seg-rem');
     if (segDone) segDone.style.width = pct + '%';
     if (segRem)  segRem.style.width  = (100 - pct) + '%';
+
     // Hero
     const hero = document.getElementById('ext-pct-hero');
     if (hero) hero.innerHTML = `${pct}<span class="stat-unit">%</span>`;
+
+    // Size stats (Total GB uploaded vs total need to upload)
+    if (bytesEl) {
+        const doneBytes = (extState.uploadedBytes || 0) + (extState.currentFileBytesSent || 0);
+        let totalEstBytes = 0;
+        if (extState.fileSizeSamples.length > 0 && total > 0) {
+            const avg = extState.fileSizeSamples.reduce((a, b) => a + b, 0) / extState.fileSizeSamples.length;
+            totalEstBytes = Math.max(doneBytes, Math.round(avg * total));
+        } else if (done > 0 && doneBytes > 0 && total > 0) {
+            const avg = doneBytes / done;
+            totalEstBytes = Math.max(doneBytes, Math.round(avg * total));
+        }
+        if (doneBytes > 0 || totalEstBytes > 0) {
+            bytesEl.textContent = `${formatBytes(doneBytes)} / ${formatBytes(totalEstBytes || doneBytes)}`;
+        } else {
+            bytesEl.textContent = '0 B / 0 B';
+        }
+    }
 }
 
 function setExtPhaseBadge(label, color = 'gray') {
@@ -1276,6 +1322,16 @@ function onExtFileByteProgress(data) {
 
     const chip = existing.querySelector('.ext-status-chip');
     if (chip) chip.innerHTML = extStatusChip('uploading', null, data.pct);
+
+    extState.current = data.current || extState.current;
+    extState.total = data.total || extState.total;
+    extState.currentFileBytesSent = data.bytes_sent || 0;
+    extState.currentFileSize = data.total_bytes || 0;
+    if (data.total_bytes && data.total_bytes > 0) {
+        extState.fileSizeSamples.push(data.total_bytes);
+        if (extState.fileSizeSamples.length > 500) extState.fileSizeSamples.shift();
+    }
+    updateExtRing(extState.current, extState.total);
 }
 
 function extStatusChip(status, errorMsg, pct) {
