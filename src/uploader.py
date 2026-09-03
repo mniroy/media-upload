@@ -16,6 +16,30 @@ UPLOAD_FAILED       = "failed"             # network/API error
 # MIME prefixes gpmc considers valid
 _VALID_MIME_PREFIXES = ("image/", "video/")
 
+# Register common camera RAW, modern photo, and video MIME types missing from standard Linux mimetypes
+_ADDITIONAL_MIME_TYPES = {
+    ".dng": "image/x-adobe-dng",
+    ".arw": "image/x-sony-arw",
+    ".cr2": "image/x-canon-cr2",
+    ".cr3": "image/x-canon-cr3",
+    ".nef": "image/x-nikon-nef",
+    ".orf": "image/x-olympus-orf",
+    ".rw2": "image/x-panasonic-rw2",
+    ".pef": "image/x-pentax-pef",
+    ".srw": "image/x-samsung-srw",
+    ".raf": "image/x-fuji-raf",
+    ".raw": "image/x-raw",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
+    ".3gp": "video/3gpp",
+    ".mts": "video/mp2t",
+    ".m2ts": "video/mp2t",
+}
+
+for ext, mime in _ADDITIONAL_MIME_TYPES.items():
+    mimetypes.add_type(mime, ext)
+    mimetypes.add_type(mime, ext.upper())
+
 
 def _is_media_file(filepath: str) -> bool:
     """Return True if the file has a MIME type that Google Photos accepts."""
