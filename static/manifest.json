@@ -1,0 +1,33 @@
+{
+  "name": "Media Upload Hub",
+  "short_name": "Media Hub",
+  "description": "Dual-mode media upload hub: USB copy+upload and external drive network upload station for Google Photos.",
+  "start_url": "/static/index.html",
+  "display": "standalone",
+  "background_color": "#f0ede8",
+  "theme_color": "#3d6b9e",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    },
+    {
+      "src": "/static/icon-192-maskable.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/static/icon-512-maskable.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ]
+}

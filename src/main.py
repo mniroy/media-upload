@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.websockets import WebSocketDisconnect
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, FileResponse
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 from src.database import SessionLocal, Run, FileRecord, Setting, encrypt_val, decrypt_val
@@ -146,6 +146,18 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/")
 def root():
     return RedirectResponse(url="/static/index.html")
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return FileResponse("static/favicon.ico")
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+def apple_touch_icon():
+    return FileResponse("static/apple-touch-icon.png")
+
+@app.get("/manifest.json", include_in_schema=False)
+def manifest():
+    return FileResponse("static/manifest.json")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

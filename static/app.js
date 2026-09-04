@@ -13,17 +13,59 @@ let speedSamples = [];
 const MAX_SPEED_SAMPLES = 5;
 
 // ---------------------------------------------------------------------------
-// Navigation
+// Navigation & Mobile Drawer
 // ---------------------------------------------------------------------------
 const TABS = ['usb', 'extdrive', 'files', 'history', 'settings'];
 
+function openSidebarDrawer() {
+    const sidebar = document.getElementById('app-sidebar') || document.querySelector('.sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    if (sidebar) sidebar.classList.add('drawer-open');
+    if (backdrop) backdrop.classList.remove('hidden');
+    document.body.classList.add('drawer-active');
+}
+
+function closeSidebarDrawer() {
+    const sidebar = document.getElementById('app-sidebar') || document.querySelector('.sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    if (sidebar) sidebar.classList.remove('drawer-open');
+    if (backdrop) backdrop.classList.add('hidden');
+    document.body.classList.remove('drawer-active');
+}
+
+function toggleSidebarDrawer() {
+    const sidebar = document.getElementById('app-sidebar') || document.querySelector('.sidebar');
+    if (sidebar && sidebar.classList.contains('drawer-open')) {
+        closeSidebarDrawer();
+    } else {
+        openSidebarDrawer();
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-    // Tab routing
-    TABS.forEach(tab => {
-        const el = document.getElementById(`tab-${tab}`);
-        if (!el) return;
-        el.addEventListener('click', () => switchTab(tab));
+    // Tab routing for all elements with data-tab (sidebar & bottom nav)
+    document.querySelectorAll('[data-tab]').forEach(el => {
+        el.addEventListener('click', (e) => {
+            const tab = el.getAttribute('data-tab');
+            if (tab) {
+                switchTab(tab);
+                closeSidebarDrawer();
+            }
+        });
     });
+
+    // Mobile drawer toggles
+    const btnTopMenu = document.getElementById('btn-mobile-menu-top');
+    if (btnTopMenu) btnTopMenu.addEventListener('click', toggleSidebarDrawer);
+
+    const btnBottomMenu = document.getElementById('btn-bottom-menu');
+    if (btnBottomMenu) btnBottomMenu.addEventListener('click', toggleSidebarDrawer);
+
+    const btnCloseSidebar = document.getElementById('sidebar-close-btn');
+    if (btnCloseSidebar) btnCloseSidebar.addEventListener('click', closeSidebarDrawer);
+
+    const backdrop = document.getElementById('sidebar-backdrop');
+    if (backdrop) backdrop.addEventListener('click', closeSidebarDrawer);
 
     // Initial data
     fetchStorage();
@@ -67,23 +109,39 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function switchTab(tab) {
-    // Hide all views
+    // Hide all views & clear active states
     TABS.forEach(t => {
         const v = document.getElementById(`view-${t}`);
         if (v) { v.classList.add('hidden'); v.classList.remove('active'); }
-        const n = document.getElementById(`tab-${t}`);
-        if (n) { n.classList.remove('nav-active', 'nav-active-ext'); }
+        document.querySelectorAll(`[data-tab="${t}"]`).forEach(el => {
+            el.classList.remove('nav-active', 'nav-active-ext', 'active');
+        });
     });
 
     // Show target view
     const view = document.getElementById(`view-${tab}`);
     if (view) { view.classList.remove('hidden'); view.classList.add('active'); }
 
-    // Activate nav item
-    const navEl = document.getElementById(`tab-${tab}`);
-    if (navEl) {
-        if (tab === 'extdrive') navEl.classList.add('nav-active-ext');
-        else navEl.classList.add('nav-active');
+    // Activate nav items for this tab (both in sidebar and bottom navigation)
+    document.querySelectorAll(`[data-tab="${tab}"]`).forEach(navEl => {
+        if (tab === 'extdrive') {
+            navEl.classList.add('nav-active-ext', 'active');
+        } else {
+            navEl.classList.add('nav-active', 'active');
+        }
+    });
+
+    // Update mobile top header subtitle
+    const mobileTitle = document.getElementById('mobile-header-title');
+    if (mobileTitle) {
+        const titles = {
+            usb: 'USB Station',
+            extdrive: 'Drive Station',
+            files: 'File Explorer',
+            history: 'History',
+            settings: 'Settings'
+        };
+        mobileTitle.textContent = titles[tab] || 'Media Hub';
     }
 
     // Lazy load
