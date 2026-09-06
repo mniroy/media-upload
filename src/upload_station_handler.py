@@ -190,7 +190,7 @@ def process_upload_station_queue(file_infos: List[dict], source_run_id: Optional
                     "total_bytes": total_bytes,
                 })
 
-            status, msg, duration = upload_file(filepath, on_progress=on_progress)
+            status, msg, duration = upload_file(filepath, on_progress=on_progress, source_station="upload_station")
 
             if status == UPLOAD_NEW:
                 file_rec.upload_status = "success"

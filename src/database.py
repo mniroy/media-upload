@@ -118,4 +118,101 @@ class UploadStationFile(Base):
     error_message = Column(String, nullable=True)
     duration_seconds = Column(Integer, default=0)
 
+# ---------------------------------------------------------------------------
+# Unified Uploaded Media Registry (Cross-station deduplication)
+# ---------------------------------------------------------------------------
+
+class UploadedMediaRegistry(Base):
+    """Central index of all media files successfully uploaded across any station."""
+    __tablename__ = "uploaded_media_registry"
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String, index=True)
+    filepath = Column(String, nullable=True)
+    filesize = Column(Integer, nullable=True)
+    sha1_hash = Column(String, nullable=True, index=True)
+    source_station = Column(String, default="unknown")  # "usb" | "extdrive" | "upload_station"
+    remote_key = Column(String, nullable=True)
+    uploaded_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+
 Base.metadata.create_all(bind=engine)
+
+def is_media_already_uploaded(db, filename: str, filepath: str = None, filesize: int = None, sha1_hash: str = None) -> bool:
+    """
+    Check if a file was uploaded by ANY station (USB Station, Drive Station, or Upload Station).
+    """
+    if sha1_hash:
+        rec = db.query(UploadedMediaRegistry).filter(UploadedMediaRegistry.sha1_hash == sha1_hash).first()
+        if rec:
+            return True
+
+    if filepath:
+        if db.query(UploadedMediaRegistry).filter(UploadedMediaRegistry.filepath == filepath).first():
+            return True
+        if db.query(ExtDriveFile).filter(ExtDriveFile.filepath == filepath, ExtDriveFile.upload_status == "success").first():
+            return True
+
+    base_name = os.path.basename(filename) if filename else (os.path.basename(filepath) if filepath else "")
+    if base_name:
+        # Check central registry
+        q = db.query(UploadedMediaRegistry).filter(UploadedMediaRegistry.filename == base_name)
+        if filesize and filesize > 0:
+            match = q.filter(UploadedMediaRegistry.filesize == filesize).first()
+            if match:
+                return True
+        elif q.first():
+            return True
+
+        # Check FileRecord (USB Station)
+        if db.query(FileRecord).filter(
+            FileRecord.upload_status == "success",
+            FileRecord.filename.endswith(base_name)
+        ).first():
+            return True
+
+        # Check UploadStationFile (Upload Station)
+        if db.query(UploadStationFile).filter(
+            UploadStationFile.filename == base_name,
+            UploadStationFile.upload_status.in_(["success", "duplicate"])
+        ).first():
+            return True
+
+        # Check ExtDriveFile by filename
+        if db.query(ExtDriveFile).filter(
+            ExtDriveFile.upload_status == "success",
+            ExtDriveFile.filepath.endswith(base_name)
+        ).first():
+            return True
+
+    return False
+
+def register_uploaded_media(db, filename: str, filepath: str = None, filesize: int = None, sha1_hash: str = None, source_station: str = "upload_station", remote_key: str = None):
+    """Record an uploaded file in the central cross-station registry."""
+    base_name = os.path.basename(filename) if filename else (os.path.basename(filepath) if filepath else "")
+    if not base_name:
+        return None
+    try:
+        q = db.query(UploadedMediaRegistry)
+        if sha1_hash:
+            existing = q.filter(UploadedMediaRegistry.sha1_hash == sha1_hash).first()
+            if existing:
+                return existing
+        existing = q.filter(UploadedMediaRegistry.filename == base_name).first()
+        if existing and (not filesize or existing.filesize == filesize):
+            return existing
+
+        new_reg = UploadedMediaRegistry(
+            filename=base_name,
+            filepath=filepath,
+            filesize=filesize,
+            sha1_hash=sha1_hash,
+            source_station=source_station,
+            remote_key=remote_key
+        )
+        db.add(new_reg)
+        db.commit()
+        db.refresh(new_reg)
+        return new_reg
+    except Exception as e:
+        print(f"[database] register_uploaded_media failed: {e}")
+        db.rollback()
+        return None

@@ -238,24 +238,48 @@ def _iter_media_files(root: str):
 
 
 # ---------------------------------------------------------------------------
-# Already-uploaded helpers
+# Already-uploaded helpers (cross-station synced)
 # ---------------------------------------------------------------------------
 
-def _get_uploaded_set(db) -> set:
-    """Return a set of all file paths successfully uploaded in any previous run."""
-    rows = db.query(ExtDriveFile.filepath).filter(
-        ExtDriveFile.upload_status == "success"
-    ).all()
-    return {r[0] for r in rows}
+def _get_uploaded_set(db) -> tuple[set, set]:
+    """
+    Return (uploaded_paths_set, uploaded_filenames_set) across all stations:
+    External Drive, USB Station, Upload Station, and central registry.
+    """
+    from src.database import FileRecord, UploadStationFile, UploadedMediaRegistry
+    paths = set()
+    filenames = set()
+
+    # 1. ExtDriveFile
+    for r in db.query(ExtDriveFile.filepath).filter(ExtDriveFile.upload_status == "success").all():
+        if r[0]:
+            paths.add(r[0])
+            filenames.add(os.path.basename(r[0]))
+
+    # 2. FileRecord (USB Station)
+    for r in db.query(FileRecord.filename).filter(FileRecord.upload_status == "success").all():
+        if r[0]:
+            filenames.add(os.path.basename(r[0]))
+
+    # 3. UploadStationFile (Upload Station)
+    for r in db.query(UploadStationFile.filename).filter(UploadStationFile.upload_status.in_(["success", "duplicate"])).all():
+        if r[0]:
+            filenames.add(os.path.basename(r[0]))
+
+    # 4. UploadedMediaRegistry
+    for r in db.query(UploadedMediaRegistry.filename, UploadedMediaRegistry.filepath).all():
+        if r[0]:
+            filenames.add(r[0])
+        if r[1]:
+            paths.add(r[1])
+
+    return paths, filenames
 
 
 def _is_already_uploaded(db, filepath: str) -> bool:
-    """Return True if this filepath has been successfully uploaded in any previous run."""
-    record = db.query(ExtDriveFile).filter(
-        ExtDriveFile.filepath == filepath,
-        ExtDriveFile.upload_status == "success"
-    ).first()
-    return record is not None
+    """Return True if this filepath has been successfully uploaded in any previous run or station."""
+    from src.database import is_media_already_uploaded
+    return is_media_already_uploaded(db, filename=os.path.basename(filepath), filepath=filepath)
 
 
 # ---------------------------------------------------------------------------
@@ -295,8 +319,8 @@ def start_ext_drive_upload():
     # Phase 1: Pre-load already uploaded paths from DB & scan disk
     _broadcast("ext_scan_started", {"run_id": run_id})
     print(f"[ext_drive] Pre-loading uploaded paths from database...")
-    uploaded_set = _get_uploaded_set(db)
-    print(f"[ext_drive] Loaded {len(uploaded_set)} uploaded paths from DB.")
+    uploaded_paths, uploaded_filenames = _get_uploaded_set(db)
+    print(f"[ext_drive] Loaded {len(uploaded_paths)} paths and {len(uploaded_filenames)} filenames from cross-station DB.")
 
     print(f"[ext_drive] Scanning media files in {drive_root}...")
     pending_files = []
@@ -305,7 +329,8 @@ def start_ext_drive_upload():
 
     for filepath in _iter_media_files(drive_root):
         total_disk_files += 1
-        if filepath in uploaded_set:
+        fname = os.path.basename(filepath)
+        if filepath in uploaded_paths or fname in uploaded_filenames:
             already_uploaded_count += 1
         else:
             pending_files.append(filepath)
@@ -418,12 +443,13 @@ def start_ext_drive_upload():
                 "total": total_pending,
             })
 
-        upload_status, err, duration = upload_file(filepath, on_progress=_on_byte_progress)
+        upload_status, err, duration = upload_file(filepath, on_progress=_on_byte_progress, source_station="extdrive")
 
         if upload_status == UPLOAD_NEW:
             speed_mbps = (file_size / (1024 * 1024)) / duration if duration > 0 else 0
             record.upload_status = "success"
-            uploaded_set.add(filepath)
+            uploaded_paths.add(filepath)
+            uploaded_filenames.add(os.path.basename(filepath))
             uploaded += 1
             _broadcast("ext_upload_speed", {
                 "speed_mbps": round(speed_mbps, 2),

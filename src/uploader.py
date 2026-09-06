@@ -5,7 +5,7 @@ from pathlib import Path
 from gpmc import Client
 from gpmc.client import calculate_sha1_hash
 from rich.progress import Progress
-from src.database import SessionLocal, Setting, decrypt_val
+from src.database import SessionLocal, Setting, decrypt_val, register_uploaded_media, is_media_already_uploaded
 
 # Status constants returned by upload_file()
 UPLOAD_NEW          = "uploaded"           # actually sent to Google Photos
@@ -58,13 +58,13 @@ def get_auth_data():
     return None
 
 
-def upload_file(filepath: str, on_progress=None) -> tuple[str, str, float]:
+def upload_file(filepath: str, on_progress=None, source_station: str = "unknown") -> tuple[str, str, float]:
     """
-    Upload a file to Google Photos.
+    Upload a file to Google Photos with cross-station duplicate checking and registration.
 
     Returns a (status, message, upload_duration_seconds) tuple where status is one of:
       - UPLOAD_NEW          – file was successfully uploaded for the first time
-      - UPLOAD_DUPLICATE    – file already exists in Google Photos (hash match)
+      - UPLOAD_DUPLICATE    – file already exists in Google Photos or was uploaded by another station
       - UPLOAD_SKIPPED      – not a supported media file (THM, LRF, XML, etc.)
       - UPLOAD_FAILED       – upload attempt failed
 
@@ -85,7 +85,19 @@ def upload_file(filepath: str, on_progress=None) -> tuple[str, str, float]:
 
     file_size = file_path.stat().st_size
 
-    print(f"Uploading {filepath} via gpmc…")
+    # Check local cross-station database first
+    db = SessionLocal()
+    try:
+        if is_media_already_uploaded(db, filename=file_path.name, filepath=str(file_path), filesize=file_size):
+            print(f"  → Already recorded in cross-station local database: {filepath}")
+            db.close()
+            return UPLOAD_DUPLICATE, "already_uploaded_locally", 0.0
+    except Exception as e:
+        print(f"Cross-station DB check error: {e}")
+    finally:
+        db.close()
+
+    print(f"Uploading {filepath} via gpmc (source: {source_station})…")
     try:
         client = Client(auth_data=auth_data)
 
@@ -96,10 +108,26 @@ def upload_file(filepath: str, on_progress=None) -> tuple[str, str, float]:
             file_path, _dummy_progress, _dummy_task
         )
 
+        # Check local DB by SHA-1 hash
+        db = SessionLocal()
+        try:
+            if is_media_already_uploaded(db, filename=file_path.name, filepath=str(file_path), filesize=file_size, sha1_hash=hash_b64):
+                print(f"  → Found matching SHA-1 hash in local database: {filepath}")
+                register_uploaded_media(db, filename=file_path.name, filepath=str(file_path), filesize=file_size, sha1_hash=hash_b64, source_station=source_station)
+                db.close()
+                return UPLOAD_DUPLICATE, "hash_match_local", 0.0
+        finally:
+            db.close()
+
         # 3. Check if already in Google Photos BEFORE uploading (no upload cost)
         remote_key = client.api.find_remote_media_by_hash(hash_bytes)
         if remote_key:
             print(f"  → Already in Google Photos: {filepath}")
+            db = SessionLocal()
+            try:
+                register_uploaded_media(db, filename=file_path.name, filepath=str(file_path), filesize=file_size, sha1_hash=hash_b64, source_station=source_station, remote_key=remote_key)
+            finally:
+                db.close()
             return UPLOAD_DUPLICATE, remote_key, 0.0
 
         # 4. Not in Photos → stream upload with byte progress
@@ -151,6 +179,14 @@ def upload_file(filepath: str, on_progress=None) -> tuple[str, str, float]:
         t1 = time.monotonic()
         duration = t1 - t0
         print(f"  → Uploaded OK in {duration:.1f}s: {filepath}")
+
+        # Register in cross-station database
+        db = SessionLocal()
+        try:
+            register_uploaded_media(db, filename=file_path.name, filepath=str(file_path), filesize=file_size, sha1_hash=hash_b64, source_station=source_station, remote_key=media_key or "")
+        finally:
+            db.close()
+
         return UPLOAD_NEW, media_key or "", duration
 
     except ValueError as e:

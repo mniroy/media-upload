@@ -73,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchSettings();
     fetchExtDriveStatus();   // populate sidebar ext storage on load
     initUploadStationDragAndDrop();
+    switchTab('upload');
     connectWebSocket();
 
     // Page visibility re-sync

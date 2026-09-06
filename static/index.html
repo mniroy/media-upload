@@ -13,7 +13,7 @@
     <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#3d6b9e">
-    <link rel="stylesheet" href="/static/style.css?v=15">
+    <link rel="stylesheet" href="/static/style.css?v=16">
 </head>
 <body>
 
@@ -59,7 +59,7 @@
                 </div>
                 <div class="mobile-brand">
                     <span class="mobile-title">Media Hub</span>
-                    <span id="mobile-header-title" class="mobile-subtitle">USB Station</span>
+                    <span id="mobile-header-title" class="mobile-subtitle">Upload Station</span>
                 </div>
             </div>
             <div class="mobile-header-right">
@@ -96,7 +96,21 @@
 
             <nav class="sidebar-nav">
                 <div class="nav-section-label">Stations</div>
-                <a id="tab-usb" class="nav-item nav-active" data-tab="usb">
+                <a id="tab-upload" class="nav-item nav-active-upload" data-tab="upload">
+                    <div class="nav-icon nav-icon-upload">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                    </div>
+                    <div class="nav-label">
+                        <span class="nav-title">Upload Station</span>
+                        <span class="nav-sub">Drag &amp; Drop Upload</span>
+                    </div>
+                    <span id="upload-nav-badge" class="nav-badge hidden"></span>
+                </a>
+                <a id="tab-usb" class="nav-item" data-tab="usb">
                     <div class="nav-icon nav-icon-usb">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M10 3H6a2 2 0 00-2 2v14c0 1.1.9 2 2 2h12a2 2 0 002-2V8l-5-5H10z"/>
@@ -121,20 +135,6 @@
                         <span class="nav-sub">Network Upload</span>
                     </div>
                     <span id="ext-nav-badge" class="nav-badge hidden"></span>
-                </a>
-                <a id="tab-upload" class="nav-item" data-tab="upload">
-                    <div class="nav-icon nav-icon-upload">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                            <polyline points="17 8 12 3 7 8"/>
-                            <line x1="12" y1="3" x2="12" y2="15"/>
-                        </svg>
-                    </div>
-                    <div class="nav-label">
-                        <span class="nav-title">Upload Station</span>
-                        <span class="nav-sub">Drag &amp; Drop Upload</span>
-                    </div>
-                    <span id="upload-nav-badge" class="nav-badge hidden"></span>
                 </a>
 
                 <div class="nav-divider"></div>
@@ -225,7 +225,7 @@
         <main class="main-content">
 
             <!-- ====== USB STATION ====== -->
-            <div id="view-usb" class="view-section active">
+            <div id="view-usb" class="view-section hidden">
                 <div class="view-header">
                     <div class="view-header-left">
                         <div class="station-icon station-icon-usb">
@@ -525,7 +525,7 @@
             </div>
 
             <!-- ====== UPLOAD STATION (Drag & Drop) ====== -->
-            <div id="view-upload" class="view-section hidden">
+            <div id="view-upload" class="view-section active">
                 <div class="view-header">
                     <div class="view-header-left">
                         <div class="station-icon station-icon-upload">
@@ -781,7 +781,17 @@
 
         <!-- BOTTOM NAVIGATION (for mobile devices) -->
         <nav id="bottom-nav" class="bottom-nav">
-            <button class="bottom-nav-item active" data-tab="usb" title="USB Station">
+            <button class="bottom-nav-item active" data-tab="upload" title="Upload Station">
+                <div class="bottom-nav-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                </div>
+                <span>Upload</span>
+            </button>
+            <button class="bottom-nav-item" data-tab="usb" title="USB Station">
                 <div class="bottom-nav-icon">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M10 3H6a2 2 0 00-2 2v14c0 1.1.9 2 2 2h12a2 2 0 002-2V8l-5-5H10z"/>
@@ -798,16 +808,6 @@
                     </svg>
                 </div>
                 <span>Drive</span>
-            </button>
-            <button class="bottom-nav-item" data-tab="upload" title="Upload Station">
-                <div class="bottom-nav-icon">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                        <polyline points="17 8 12 3 7 8"/>
-                        <line x1="12" y1="3" x2="12" y2="15"/>
-                    </svg>
-                </div>
-                <span>Upload</span>
             </button>
             <button class="bottom-nav-item" data-tab="history" title="History">
                 <div class="bottom-nav-icon">
@@ -840,6 +840,6 @@
         </nav>
     </div>
 
-    <script src="/static/app.js?v=15"></script>
+    <script src="/static/app.js?v=16"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@ import shutil
 import time
 import threading
 import subprocess
-from src.database import SessionLocal, Run, FileRecord
+from src.database import SessionLocal, Run, FileRecord, is_media_already_uploaded
 from src.uploader import upload_file, UPLOAD_NEW, UPLOAD_DUPLICATE, UPLOAD_SKIPPED, UPLOAD_FAILED
 
 STAGING_DIR = "/var/lib/media_upload/staging"
@@ -285,9 +285,10 @@ def upload_selected_folders(run_id: int, selected_folders: list[str]):
                 full_path = os.path.join(root, file)
                 rel = os.path.relpath(full_path, session_dir)
 
-                # Deduplication: skip if already uploaded successfully
-                if rel in already_uploaded:
-                    print(f"Skipping already-uploaded: {rel}")
+                # Deduplication: skip if already uploaded successfully or in cross-station DB
+                f_size = os.path.getsize(full_path) if os.path.exists(full_path) else 0
+                if rel in already_uploaded or is_media_already_uploaded(db, filename=file, filepath=full_path, filesize=f_size):
+                    print(f"Skipping already-uploaded in local DB: {rel}")
                     continue
 
                 # Find existing FileRecord for this file in this run
@@ -330,7 +331,7 @@ def upload_selected_folders(run_id: int, selected_folders: list[str]):
             "status": "uploading"
         })
 
-        upload_status, err, duration = upload_file(full_path)
+        upload_status, err, duration = upload_file(full_path, source_station="usb")
 
         if upload_status == UPLOAD_NEW:
             # Real upload — compute accurate speed from file size and actual duration
@@ -411,7 +412,7 @@ def process_local_directory(folder_path: str | None = None):
 
     walk_root = folder_path if folder_path else STAGING_DIR
 
-    # Build set of already-successfully-uploaded relative paths
+    # Build set of already-successfully-uploaded relative paths and filenames
     already_uploaded = set(
         r.filename
         for r in db.query(FileRecord).filter(FileRecord.upload_status == "success").all()
@@ -426,9 +427,9 @@ def process_local_directory(folder_path: str | None = None):
             full_path = os.path.join(root, file)
             rel_file = os.path.relpath(full_path, STAGING_DIR)
 
-            # Deduplication
-            if rel_file in already_uploaded:
-                print(f"Skipping already-uploaded: {rel_file}")
+            # Cross-station deduplication
+            if rel_file in already_uploaded or is_media_already_uploaded(db, filename=file, filepath=full_path):
+                print(f"Skipping already-uploaded in local DB: {rel_file}")
                 continue
 
             record = FileRecord(run_id=run.id, filename=rel_file, copy_status="success")
@@ -459,7 +460,7 @@ def process_local_directory(folder_path: str | None = None):
             "status": "uploading"
         })
 
-        upload_status, err, duration = upload_file(full_path)
+        upload_status, err, duration = upload_file(full_path, source_station="usb")
 
         if upload_status == UPLOAD_NEW:
             speed_mbps = (file_size / (1024 * 1024)) / duration if duration > 0 else 0
