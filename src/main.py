@@ -167,21 +167,25 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # Redirect root to the main UI
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return RedirectResponse(url="/static/index.html")
 
-@app.get("/favicon.ico", include_in_schema=False)
+@app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
 def favicon():
     return FileResponse("static/favicon.ico")
 
-@app.get("/apple-touch-icon.png", include_in_schema=False)
+@app.api_route("/apple-touch-icon.png", methods=["GET", "HEAD"], include_in_schema=False)
 def apple_touch_icon():
     return FileResponse("static/apple-touch-icon.png")
 
-@app.get("/manifest.json", include_in_schema=False)
+@app.api_route("/manifest.json", methods=["GET", "HEAD"], include_in_schema=False)
 def manifest():
-    return FileResponse("static/manifest.json")
+    return FileResponse("static/manifest.json", media_type="application/manifest+json")
+
+@app.api_route("/sw.js", methods=["GET", "HEAD"], include_in_schema=False)
+def service_worker():
+    return FileResponse("static/sw.js", media_type="application/javascript", headers={"Service-Worker-Allowed": "/"})
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

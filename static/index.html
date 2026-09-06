@@ -10,9 +10,19 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="icon" href="/static/favicon.ico" sizes="any">
     <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png">
     <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
-    <link rel="manifest" href="/static/manifest.json">
+    <link rel="apple-touch-icon" sizes="192x192" href="/static/icon-192.png">
+    <link rel="apple-touch-icon" sizes="512x512" href="/static/icon-512.png">
+    <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#3d6b9e">
+    <!-- PWA & Mobile Web App Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Media Hub">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="Media Hub">
+    <meta name="format-detection" content="telephone=no">
     <link rel="stylesheet" href="/static/style.css?v=16">
 </head>
 <body>
@@ -165,6 +175,17 @@
                         </svg>
                     </div>
                     <div class="nav-label"><span class="nav-title">Settings</span></div>
+                </a>
+                <a id="btn-pwa-install" class="nav-item hidden" onclick="triggerPwaInstall()" style="cursor:pointer;">
+                    <div class="nav-icon" style="color:var(--blue);">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                    </div>
+                    <div class="nav-label"><span class="nav-title">Install App</span></div>
+                    <span class="nav-badge" style="display:inline-flex;background:var(--blue-soft);color:var(--blue);">PWA</span>
                 </a>
             </nav>
 
@@ -772,6 +793,23 @@
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 11-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
                                 Shutdown
                             </button>
+                        </div>
+                    </div>
+                    <div class="settings-card">
+                        <h3 class="settings-section-title">Install App (PWA)</h3>
+                        <p class="settings-hint">Install Media Hub on your Mac (Chrome/Safari/Edge) or Mobile Phone (iPhone/Android) for instant standalone access.</p>
+                        <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 10px;">
+                            <div>
+                                <button type="button" id="btn-pwa-install-settings" onclick="triggerPwaInstall()" class="btn btn-primary" style="display:inline-flex;align-items:center;gap:8px;">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    Install on Mac / Phone
+                                </button>
+                            </div>
+                            <div class="pwa-status-text" style="font-size:12px;color:var(--text-sub);line-height:1.7;background:var(--bg-elevated);padding:10px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);">
+                                <div>📱 <strong>iPhone / iPad:</strong> In Safari, tap the <strong>Share</strong> icon (⬆️) &rarr; tap <strong>Add to Home Screen</strong>.</div>
+                                <div>💻 <strong>Mac Safari:</strong> Click <strong>File</strong> in macOS top menu &rarr; <strong>Add to Dock&hellip;</strong>.</div>
+                                <div>⚡ <strong>Chrome / Edge:</strong> Click <strong>Install</strong> in the browser address bar or use the button above.</div>
+                            </div>
                         </div>
                     </div>
                 </div>

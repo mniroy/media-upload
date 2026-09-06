@@ -74,6 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchExtDriveStatus();   // populate sidebar ext storage on load
     initUploadStationDragAndDrop();
     switchTab('upload');
+    initPwa();
     connectWebSocket();
 
     // Page visibility re-sync
@@ -2174,5 +2175,81 @@ async function uploadStationReupload(runId) {
         }
     } catch (e) {
         showToast(`Re-upload error: ${e.message}`, '❌');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PWA Installation & Service Worker
+// ---------------------------------------------------------------------------
+let _deferredPwaPrompt = null;
+
+function initPwa() {
+    // 1. Register Service Worker
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                .then(reg => {
+                    console.log('[PWA] Service Worker registered with scope:', reg.scope);
+                })
+                .catch(err => {
+                    console.warn('[PWA] Service Worker registration failed:', err);
+                });
+        });
+    }
+
+    // 2. Capture beforeinstallprompt (Chrome / Edge / Android)
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        _deferredPwaPrompt = e;
+        console.log('[PWA] beforeinstallprompt captured');
+
+        // Show install button in sidebar
+        const btnSidebar = document.getElementById('btn-pwa-install');
+        if (btnSidebar) btnSidebar.classList.remove('hidden');
+
+        const btnSettings = document.getElementById('btn-pwa-install-settings');
+        if (btnSettings) {
+            btnSettings.textContent = '⚡ Install Media Hub App';
+        }
+    });
+
+    // 3. Listen for appinstalled
+    window.addEventListener('appinstalled', () => {
+        console.log('[PWA] App installed successfully');
+        _deferredPwaPrompt = null;
+        const btnSidebar = document.getElementById('btn-pwa-install');
+        if (btnSidebar) btnSidebar.classList.add('hidden');
+        showToast('Media Hub installed successfully!', '🎉');
+    });
+
+    // 4. Standalone display mode check
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    if (isStandalone) {
+        document.body.classList.add('is-pwa-standalone');
+        const btnSidebar = document.getElementById('btn-pwa-install');
+        if (btnSidebar) btnSidebar.classList.add('hidden');
+    }
+}
+
+async function triggerPwaInstall() {
+    if (_deferredPwaPrompt) {
+        _deferredPwaPrompt.prompt();
+        const { outcome } = await _deferredPwaPrompt.userChoice;
+        console.log('[PWA] User choice outcome:', outcome);
+        if (outcome === 'accepted') {
+            showToast('Installing Media Hub…', '🚀');
+        }
+        _deferredPwaPrompt = null;
+    } else {
+        // Fallback for browsers that don't emit beforeinstallprompt (Safari iOS / Mac Safari)
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const isMacSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        if (isIOS) {
+            alert('To install on iPhone/iPad:\n1. Tap the Share button (⬆️) at the bottom.\n2. Scroll down and tap "Add to Home Screen" (+).');
+        } else if (isMacSafari) {
+            alert('To install on Mac Safari:\n1. Click "File" in the top macOS menu bar.\n2. Click "Add to Dock…".');
+        } else {
+            showToast('To install: click the Install icon in your browser address bar (top right).', 'ℹ️');
+        }
     }
 }
