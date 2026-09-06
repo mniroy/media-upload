@@ -4,10 +4,20 @@ import datetime
 import os
 from cryptography.fernet import Fernet
 
-DATABASE_URL = "sqlite:////var/lib/media_upload/data.db"
-SECRET_KEY_FILE = "/var/lib/media_upload/secret.key"
+DATA_DIR = "/var/lib/media_upload"
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    test_file = os.path.join(DATA_DIR, ".perm_test")
+    with open(test_file, "w") as f:
+        f.write("ok")
+    os.remove(test_file)
+except Exception:
+    DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+    os.makedirs(DATA_DIR, exist_ok=True)
 
-os.makedirs("/var/lib/media_upload", exist_ok=True)
+DATABASE_URL = f"sqlite:///{os.path.join(DATA_DIR, 'data.db')}"
+SECRET_KEY_FILE = os.path.join(DATA_DIR, "secret.key")
+
 if not os.path.exists(SECRET_KEY_FILE):
     with open(SECRET_KEY_FILE, "wb") as f:
         f.write(Fernet.generate_key())
@@ -77,5 +87,35 @@ class ExtDriveFile(Base):
     filepath = Column(String)   # full absolute path on the external drive
     upload_status = Column(String, default="pending")  # pending | success | failed | skipped
     error_message = Column(String, nullable=True)
+
+# ---------------------------------------------------------------------------
+# Upload Station tables — Direct web drag & drop uploads
+# ---------------------------------------------------------------------------
+
+class UploadStationRun(Base):
+    """One drag-and-drop batch upload session."""
+    __tablename__ = "upload_station_runs"
+    id = Column(Integer, primary_key=True, index=True)
+    start_time = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    end_time = Column(DateTime, nullable=True)
+    overall_status = Column(String, default="running")  # running | completed | failed | stopped | paused
+    total_files = Column(Integer, default=0)
+    uploaded_files = Column(Integer, default=0)
+    failed_files = Column(Integer, default=0)
+    skipped_files = Column(Integer, default=0)
+    total_bytes = Column(Integer, default=0)
+    uploaded_bytes = Column(Integer, default=0)
+
+class UploadStationFile(Base):
+    """Per-file record for a drag-and-drop upload session."""
+    __tablename__ = "upload_station_files"
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(Integer, index=True)
+    filename = Column(String)
+    filepath = Column(String, nullable=True)
+    filesize = Column(Integer, default=0)
+    upload_status = Column(String, default="pending")  # pending | uploading | success | duplicate | failed | skipped
+    error_message = Column(String, nullable=True)
+    duration_seconds = Column(Integer, default=0)
 
 Base.metadata.create_all(bind=engine)

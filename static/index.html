@@ -122,6 +122,20 @@
                     </div>
                     <span id="ext-nav-badge" class="nav-badge hidden"></span>
                 </a>
+                <a id="tab-upload" class="nav-item" data-tab="upload">
+                    <div class="nav-icon nav-icon-upload">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                    </div>
+                    <div class="nav-label">
+                        <span class="nav-title">Upload Station</span>
+                        <span class="nav-sub">Drag &amp; Drop Upload</span>
+                    </div>
+                    <span id="upload-nav-badge" class="nav-badge hidden"></span>
+                </a>
 
                 <div class="nav-divider"></div>
                 <div class="nav-section-label">Tools</div>
@@ -510,6 +524,177 @@
                 </div>
             </div>
 
+            <!-- ====== UPLOAD STATION (Drag & Drop) ====== -->
+            <div id="view-upload" class="view-section hidden">
+                <div class="view-header">
+                    <div class="view-header-left">
+                        <div class="station-icon station-icon-upload">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 class="view-title">Upload Station</h1>
+                            <p class="view-subtitle">Drag &amp; drop media &middot; Direct remote upload to Google Photos</p>
+                        </div>
+                    </div>
+                    <div class="view-header-right">
+                        <span id="station-upload-badge" class="badge badge-gray">Idle</span>
+                        <div class="btn-group">
+                            <button id="btn-station-pause-resume" onclick="uploadStationTogglePauseResume()" class="btn hidden">
+                                <span id="station-pause-text">&#9646;&#9646; Pause</span>
+                            </button>
+                            <button id="btn-station-stop" onclick="uploadStationStopAction()" class="btn hidden" style="background:var(--red-soft);color:var(--red);border-color:var(--red);">
+                                <span>&#10005; Stop</span>
+                            </button>
+                            <button id="btn-station-clear" onclick="uploadStationClearQueue()" class="btn btn-ghost-xs">
+                                <span>Clear Completed</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BIG DRAG AND DROP WINDOW SECTION -->
+                <div id="drop-zone-large" class="drop-zone-large" onclick="triggerStationFileInput()">
+                    <input type="file" id="upload-station-file-input" multiple class="hidden" accept="image/*,video/*,.dng,.arw,.cr2,.cr3,.nef,.orf,.rw2,.pef,.srw,.raf,.raw,.heic,.heif,.3gp,.mts,.m2ts" onchange="handleStationFilesSelected(this.files)">
+                    <div class="drop-zone-content">
+                        <div class="drop-zone-icon-wrap">
+                            <svg class="drop-zone-icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
+                                <path d="M12 12v9"/>
+                                <path d="m16 16-4-4-4 4"/>
+                            </svg>
+                        </div>
+                        <h2 class="drop-zone-title">Drop media files here</h2>
+                        <p class="drop-zone-subtitle">Drag and drop photos, videos, or folders &mdash; or <span class="drop-browse-btn">Browse Files</span></p>
+                        <div class="drop-zone-formats">
+                            <span class="format-tag">JPG</span>
+                            <span class="format-tag">PNG</span>
+                            <span class="format-tag">HEIC</span>
+                            <span class="format-tag">RAW (ARW/CR2/DNG/NEF)</span>
+                            <span class="format-tag">MP4</span>
+                            <span class="format-tag">MOV</span>
+                            <span class="format-tag">4K Videos</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dual-panel" style="margin-top: 16px;">
+                    <!-- Live Progress Telemetry Card -->
+                    <div class="station-card">
+                        <div class="card-header">
+                            <div class="card-header-left">
+                                <div class="card-icon-sm icon-cyan">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                        <path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/>
+                                    </svg>
+                                </div>
+                                <span class="card-title">Upload Telemetry</span>
+                            </div>
+                            <span id="station-upload-phase-tag" class="badge-corner">Ready</span>
+                        </div>
+
+                        <!-- Stat hero -->
+                        <div class="stat-hero">
+                            <div class="stat-value" id="station-upload-pct-hero">0<span class="stat-unit">%</span></div>
+                            <div class="stat-label">streamed to Google Photos</div>
+                            <div class="stat-change neutral">
+                                <span id="station-upload-count">0 / 0 files</span>
+                                &nbsp;&middot;&nbsp;
+                                <span id="station-upload-speed">— MB/s</span>
+                            </div>
+                        </div>
+
+                        <!-- Segmented progress bar -->
+                        <div class="seg-bar-wrap">
+                            <div class="seg-bar">
+                                <div class="seg-piece seg-upload" id="station-upload-seg-done" style="width:0%"></div>
+                                <div class="seg-piece seg-gray" id="station-upload-seg-rem"  style="width:100%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Active File Bar -->
+                        <div id="station-active-file-box" class="active-file-box hidden">
+                            <div class="active-file-header">
+                                <span class="active-file-label">Uploading:</span>
+                                <span id="station-active-filename" class="active-filename">—</span>
+                            </div>
+                            <div class="active-file-stats">
+                                <span id="station-active-file-bytes">0 B / 0 B</span>
+                                <span id="station-active-file-speed">—</span>
+                            </div>
+                            <div class="mini-track">
+                                <div id="station-active-file-bar" class="mini-fill fill-cyan" style="width:0%"></div>
+                            </div>
+                        </div>
+
+                        <p id="station-status-text" class="card-status">Drop files into the zone above to start uploading.</p>
+                    </div>
+
+                    <!-- Live Queue & File Feed -->
+                    <div class="station-card feed-card-large">
+                        <div class="card-header">
+                            <div class="card-header-left">
+                                <div class="card-icon-sm icon-cyan">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                        <path d="M14.5 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V7.5L14.5 2z"/>
+                                        <polyline points="14 2 14 8 20 8"/>
+                                    </svg>
+                                </div>
+                                <span class="card-title">Live Queue &amp; Status</span>
+                                <span id="station-feed-count" class="feed-count-badge">0 files</span>
+                            </div>
+                            <div class="card-header-right" style="display:flex;align-items:center;gap:8px">
+                                <button onclick="fetchUploadStationLiveFiles()" class="btn-ghost-xs" title="Reload live queue">&#8635; Refresh</button>
+                                <span class="badge-pulse" id="station-live-dot">&#9679; Live</span>
+                            </div>
+                        </div>
+
+                        <div class="file-feed file-feed-expanded">
+                            <ul id="station-files-list" class="file-list file-list-expanded"></ul>
+                            <p id="station-files-empty" class="file-empty">No files queued or uploaded yet.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Session History Card -->
+                <div class="station-card history-full-card" style="margin-top: 16px;">
+                    <div class="card-header">
+                        <div class="card-header-left">
+                            <div class="card-icon-sm icon-purple">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <polyline points="12 6 12 12 16 14"/>
+                                </svg>
+                            </div>
+                            <span class="card-title">Upload Station History</span>
+                        </div>
+                        <button onclick="fetchUploadStationHistory()" class="btn-ghost-xs">&#8635; Refresh History</button>
+                    </div>
+                    <div class="history-table-wrap history-table-wrap-expanded">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Started</th>
+                                    <th>Total Files</th>
+                                    <th>&#10003; Uploaded</th>
+                                    <th>&#10007; Failed</th>
+                                    <th>Skipped</th>
+                                    <th>Status</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="station-history-body">
+                                <tr><td colspan="8" class="history-empty">No sessions yet.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <!-- ====== HISTORY ====== -->
             <div id="view-history" class="view-section hidden">
                 <div class="view-header">
@@ -613,6 +798,16 @@
                     </svg>
                 </div>
                 <span>Drive</span>
+            </button>
+            <button class="bottom-nav-item" data-tab="upload" title="Upload Station">
+                <div class="bottom-nav-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                </div>
+                <span>Upload</span>
             </button>
             <button class="bottom-nav-item" data-tab="history" title="History">
                 <div class="bottom-nav-icon">

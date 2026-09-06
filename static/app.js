@@ -15,7 +15,7 @@ const MAX_SPEED_SAMPLES = 5;
 // ---------------------------------------------------------------------------
 // Navigation & Mobile Drawer
 // ---------------------------------------------------------------------------
-const TABS = ['usb', 'extdrive', 'files', 'history', 'settings'];
+const TABS = ['usb', 'extdrive', 'upload', 'files', 'history', 'settings'];
 
 function openSidebarDrawer() {
     const sidebar = document.getElementById('app-sidebar') || document.querySelector('.sidebar');
@@ -72,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchNetworkSpeed();
     fetchSettings();
     fetchExtDriveStatus();   // populate sidebar ext storage on load
+    initUploadStationDragAndDrop();
     connectWebSocket();
 
     // Page visibility re-sync
@@ -114,7 +115,7 @@ function switchTab(tab) {
         const v = document.getElementById(`view-${t}`);
         if (v) { v.classList.add('hidden'); v.classList.remove('active'); }
         document.querySelectorAll(`[data-tab="${t}"]`).forEach(el => {
-            el.classList.remove('nav-active', 'nav-active-ext', 'active');
+            el.classList.remove('nav-active', 'nav-active-ext', 'nav-active-upload', 'active');
         });
     });
 
@@ -126,6 +127,8 @@ function switchTab(tab) {
     document.querySelectorAll(`[data-tab="${tab}"]`).forEach(navEl => {
         if (tab === 'extdrive') {
             navEl.classList.add('nav-active-ext', 'active');
+        } else if (tab === 'upload') {
+            navEl.classList.add('nav-active-upload', 'active');
         } else {
             navEl.classList.add('nav-active', 'active');
         }
@@ -137,6 +140,7 @@ function switchTab(tab) {
         const titles = {
             usb: 'USB Station',
             extdrive: 'Drive Station',
+            upload: 'Upload Station',
             files: 'File Explorer',
             history: 'History',
             settings: 'Settings'
@@ -147,6 +151,7 @@ function switchTab(tab) {
     // Lazy load
     if (tab === 'history') fetchHistory();
     if (tab === 'extdrive') { fetchExtDriveStatus(); fetchExtDriveHistory(); fetchExtLiveFiles(); }
+    if (tab === 'upload') { fetchUploadStationStatus(); fetchUploadStationLiveFiles(); fetchUploadStationHistory(); }
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +196,15 @@ function handleWsMessage(event) {
         case 'ext_upload_done':     onExtUploadDone(data); break;
         case 'ext_run_completed':   onExtRunCompleted(data); break;
         case 'ext_drive_status':    onExtDriveStatus(data); break;
+        // Upload Station WS events
+        case 'upload_station_run_started':  onUploadStationRunStarted(data); break;
+        case 'upload_station_file_start':    onUploadStationFileStart(data); break;
+        case 'upload_station_progress':      onUploadStationProgress(data); break;
+        case 'upload_station_speed':         onUploadStationSpeed(data); break;
+        case 'upload_station_file_done':     onUploadStationFileDone(data); break;
+        case 'upload_station_file_failed':   onUploadStationFileFailed(data); break;
+        case 'upload_station_stopped':       onUploadStationStopped(data); break;
+        case 'upload_station_completed':     onUploadStationCompleted(data); break;
         case 'net_speed':           onNetSpeed(data); break;
     }
 }
@@ -280,6 +294,22 @@ function onStateSync(s) {
     
     // Automatically load live feed files for the current session
     fetchExtLiveFiles();
+
+    // Upload Station state restore
+    const uploadPhase = s.upload_station_phase || 'idle';
+    uploadStationState.phase = uploadPhase;
+    uploadStationState.runId = s.upload_station_run_id;
+    uploadStationState.current = s.upload_station_current || 0;
+    uploadStationState.total = s.upload_station_total || 0;
+    uploadStationState.uploaded = s.upload_station_uploaded || 0;
+    uploadStationState.failed = s.upload_station_failed || 0;
+    uploadStationState.skipped = s.upload_station_skipped || 0;
+    uploadStationState.bytesDone = s.upload_station_bytes_done || 0;
+    uploadStationState.bytesTotal = s.upload_station_bytes_total || 0;
+    uploadStationState.speedMbps = s.upload_station_speed_mbps;
+    uploadStationState.currentFile = s.upload_station_current_file;
+    updateUploadStationUI();
+    fetchUploadStationLiveFiles();
 }
 
 // ---------------------------------------------------------------------------
@@ -1515,4 +1545,633 @@ function escapeHtml(str) {
 function escapeAttr(str) {
     if (!str) return '';
     return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// =============================================================================
+// UPLOAD STATION (Drag & Drop Direct Upload)
+// =============================================================================
+
+const uploadStationState = {
+    phase: 'idle',           // idle | uploading | paused | completed | failed | stopped
+    runId: null,
+    current: 0,
+    total: 0,
+    uploaded: 0,
+    failed: 0,
+    skipped: 0,
+    bytesDone: 0,
+    bytesTotal: 0,
+    speedMbps: null,
+    currentFile: null
+};
+
+function initUploadStationDragAndDrop() {
+    const dropZone = document.getElementById('drop-zone-large');
+    if (!dropZone) return;
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+        document.body.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
+    });
+
+    // Window drag-over indication if on Upload Station view
+    let dragCounter = 0;
+    window.addEventListener('dragenter', (e) => {
+        dragCounter++;
+        const view = document.getElementById('view-upload');
+        if (view && !view.classList.contains('hidden')) {
+            dropZone.classList.add('dragover');
+        }
+    });
+
+    window.addEventListener('dragleave', (e) => {
+        dragCounter--;
+        if (dragCounter <= 0) {
+            dragCounter = 0;
+            dropZone.classList.remove('dragover');
+        }
+    });
+
+    window.addEventListener('drop', (e) => {
+        dragCounter = 0;
+        dropZone.classList.remove('dragover');
+        const view = document.getElementById('view-upload');
+        if (view && !view.classList.contains('hidden') && e.target !== dropZone && !dropZone.contains(e.target)) {
+            handleDropEvent(e);
+        }
+    });
+
+    dropZone.addEventListener('drop', handleDropEvent, false);
+}
+
+function triggerStationFileInput() {
+    const input = document.getElementById('upload-station-file-input');
+    if (input) input.click();
+}
+
+function handleStationFilesSelected(fileList) {
+    if (!fileList || fileList.length === 0) return;
+    uploadStationFiles(Array.from(fileList));
+    const input = document.getElementById('upload-station-file-input');
+    if (input) input.value = '';
+}
+
+async function handleDropEvent(e) {
+    const items = e.dataTransfer.items;
+    const files = [];
+
+    if (items && items.length > 0) {
+        const queue = [];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+            if (entry) {
+                queue.push(traverseFileTree(entry));
+            } else if (item.kind === 'file') {
+                const f = item.getAsFile();
+                if (f) files.push(f);
+            }
+        }
+        if (queue.length > 0) {
+            const nestedArrays = await Promise.all(queue);
+            nestedArrays.forEach(arr => files.push(...arr));
+        }
+    } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        for (let i = 0; i < e.dataTransfer.files.length; i++) {
+            files.push(e.dataTransfer.files[i]);
+        }
+    }
+
+    if (files.length > 0) {
+        uploadStationFiles(files);
+    } else {
+        showToast('No valid files detected in drop.', '⚠️');
+    }
+}
+
+function traverseFileTree(item) {
+    return new Promise((resolve) => {
+        if (item.isFile) {
+            item.file(file => resolve([file]), () => resolve([]));
+        } else if (item.isDirectory) {
+            const dirReader = item.createReader();
+            const entriesList = [];
+            const readEntries = () => {
+                dirReader.readEntries(async (entries) => {
+                    if (entries.length === 0) {
+                        const results = await Promise.all(entriesList.map(e => traverseFileTree(e)));
+                        resolve(results.flat());
+                    } else {
+                        entriesList.push(...entries);
+                        readEntries();
+                    }
+                }, () => resolve([]));
+            };
+            readEntries();
+        } else {
+            resolve([]);
+        }
+    });
+}
+
+async function uploadStationFiles(files) {
+    if (!files || files.length === 0) return;
+
+    showToast(`Uploading ${files.length} file(s) to server…`, '☁️');
+    setUploadStationPhaseBadge('Uploading', 'cyan');
+
+    const list = document.getElementById('station-files-list');
+    const emptyMsg = document.getElementById('station-files-empty');
+    if (emptyMsg) emptyMsg.classList.add('hidden');
+
+    files.forEach(f => {
+        addOrUpdateStationFileRow(f.name, f.size, 'queued', 'Queued for upload');
+    });
+
+    const BATCH_SIZE = 15;
+    for (let i = 0; i < files.length; i += BATCH_SIZE) {
+        const batch = files.slice(i, i + BATCH_SIZE);
+        const formData = new FormData();
+        batch.forEach(file => {
+            formData.append('files', file, file.name);
+        });
+
+        try {
+            const res = await fetch('/api/upload_station/upload', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            if (data.status === 'queued') {
+                // Successfully queued on server
+            }
+        } catch (err) {
+            console.error('Upload station post error:', err);
+            showToast(`Upload failed: ${err.message}`, '❌');
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Upload Station WS handlers
+// ---------------------------------------------------------------------------
+
+function onUploadStationRunStarted(data) {
+    uploadStationState.phase = 'uploading';
+    uploadStationState.runId = data.run_id;
+    uploadStationState.total = data.total_files || 0;
+    uploadStationState.bytesTotal = data.total_bytes || 0;
+    uploadStationState.current = 0;
+    uploadStationState.uploaded = 0;
+    uploadStationState.failed = 0;
+    uploadStationState.skipped = 0;
+    uploadStationState.bytesDone = 0;
+    uploadStationState.currentFile = null;
+    uploadStationState.speedMbps = null;
+
+    updateUploadStationUI();
+    setUploadStationPhaseBadge('Uploading', 'cyan');
+    setText('station-status-text', `Uploading batch of ${data.total_files} file(s) to Google Photos…`);
+    showToast(`Upload Station session #${data.run_id} started.`, '🚀');
+}
+
+function onUploadStationFileStart(data) {
+    uploadStationState.phase = 'uploading';
+    uploadStationState.currentFile = data.filename;
+    uploadStationState.current = data.current;
+    uploadStationState.total = data.total || uploadStationState.total;
+
+    updateUploadStationUI();
+    addOrUpdateStationFileRow(data.filename, data.filesize, 'uploading', 'Streaming to Google Photos…');
+}
+
+function onUploadStationProgress(data) {
+    uploadStationState.phase = 'uploading';
+    uploadStationState.currentFile = data.filename;
+    uploadStationState.current = data.current;
+    uploadStationState.total = data.total;
+    uploadStationState.uploaded = data.uploaded_files;
+    uploadStationState.failed = data.failed_files;
+    uploadStationState.bytesDone = data.cum_bytes;
+    uploadStationState.bytesTotal = data.total_bytes;
+
+    updateUploadStationUI();
+
+    const activeBox = document.getElementById('station-active-file-box');
+    if (activeBox) activeBox.classList.remove('hidden');
+    setText('station-active-filename', data.filename || '—');
+    setText('station-active-file-bytes', `${formatBytes(data.bytes_sent || 0)} / ${formatBytes(data.filesize || 0)}`);
+    const filePct = data.filesize > 0 ? Math.min(100, (data.bytes_sent / data.filesize * 100)).toFixed(0) : 0;
+    const fileBar = document.getElementById('station-active-file-bar');
+    if (fileBar) fileBar.style.width = `${filePct}%`;
+
+    updateStationFileProgress(data.filename, data.bytes_sent, data.filesize);
+}
+
+function onUploadStationSpeed(data) {
+    uploadStationState.speedMbps = data.speed_mbps;
+    if (data.speed_mbps !== null && data.speed_mbps !== undefined) {
+        setText('station-upload-speed', `${data.speed_mbps.toFixed(2)} MB/s`);
+        setText('station-active-file-speed', `${data.speed_mbps.toFixed(2)} MB/s`);
+    }
+}
+
+function onUploadStationFileDone(data) {
+    if (data.status === 'success' || data.status === 'duplicate') {
+        uploadStationState.uploaded++;
+    } else if (data.status === 'skipped') {
+        uploadStationState.skipped++;
+    }
+    updateUploadStationUI();
+    addOrUpdateStationFileRow(data.filename, data.filesize, data.status, data.status === 'duplicate' ? 'Already in Google Photos' : (data.error || 'Uploaded successfully'));
+}
+
+function onUploadStationFileFailed(data) {
+    uploadStationState.failed++;
+    updateUploadStationUI();
+    addOrUpdateStationFileRow(data.filename, data.filesize, 'failed', data.error || 'Upload error');
+}
+
+function onUploadStationStopped(data) {
+    uploadStationState.phase = 'stopped';
+    setUploadStationPhaseBadge('Stopped', 'red');
+    setText('station-status-text', 'Upload stopped by user.');
+    updateUploadStationUI();
+    fetchUploadStationHistory();
+    showToast('Upload Station stopped.', '⏹️');
+}
+
+function onUploadStationCompleted(data) {
+    const isError = data.status === 'failed';
+    uploadStationState.phase = isError ? 'failed' : 'completed';
+    setUploadStationPhaseBadge(isError ? 'Error' : 'Done', isError ? 'red' : 'green');
+    setText('station-status-text', isError ? `Completed with errors: ${data.error || ''}` : `All ${data.total_files || 0} file(s) processed.`);
+    
+    const activeBox = document.getElementById('station-active-file-box');
+    if (activeBox) activeBox.classList.add('hidden');
+
+    updateUploadStationUI();
+    fetchUploadStationHistory();
+    fetchUploadStationLiveFiles();
+    showToast(isError ? 'Upload finished with errors.' : 'All files uploaded to Google Photos!', isError ? '⚠️' : '✅');
+}
+
+function updateUploadStationUI() {
+    const st = uploadStationState;
+    const total = st.total || 0;
+    const done = st.uploaded + st.failed + st.skipped;
+    const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
+    setText('station-upload-pct-hero', `${pct}%`);
+    setText('station-upload-count', `${done} / ${total} files`);
+    
+    if (st.speedMbps !== null && st.speedMbps !== undefined && st.phase === 'uploading') {
+        setText('station-upload-speed', `${st.speedMbps.toFixed(2)} MB/s`);
+    } else {
+        setText('station-upload-speed', '— MB/s');
+    }
+
+    const segDone = document.getElementById('station-upload-seg-done');
+    const segRem = document.getElementById('station-upload-seg-rem');
+    if (segDone) segDone.style.width = `${pct}%`;
+    if (segRem) segRem.style.width = `${100 - pct}%`;
+
+    const isUploading = st.phase === 'uploading';
+    const isPaused = st.phase === 'paused';
+    const pauseBtn = document.getElementById('btn-station-pause-resume');
+    const stopBtn = document.getElementById('btn-station-stop');
+    const pauseText = document.getElementById('station-pause-text');
+
+    if (pauseBtn) {
+        if (isUploading || isPaused) {
+            pauseBtn.classList.remove('hidden');
+            if (isPaused) {
+                pauseBtn.className = 'btn btn-success';
+                if (pauseText) pauseText.innerHTML = '&#9654; Resume';
+            } else {
+                pauseBtn.className = 'btn';
+                if (pauseText) pauseText.innerHTML = '&#9646;&#9646; Pause';
+            }
+        } else {
+            pauseBtn.classList.add('hidden');
+        }
+    }
+
+    if (stopBtn) {
+        if (isUploading || isPaused) stopBtn.classList.remove('hidden');
+        else stopBtn.classList.add('hidden');
+    }
+
+    const phaseTag = document.getElementById('station-upload-phase-tag');
+    if (phaseTag) {
+        const map = {
+            idle: 'Ready',
+            uploading: 'Uploading',
+            paused: 'Paused',
+            completed: 'Done',
+            failed: 'Failed',
+            stopped: 'Stopped'
+        };
+        phaseTag.textContent = map[st.phase] || st.phase;
+    }
+}
+
+function setUploadStationPhaseBadge(text, color) {
+    const badge = document.getElementById('station-upload-badge');
+    if (!badge) return;
+    badge.textContent = text;
+    badge.className = `badge badge-${color}`;
+}
+
+async function uploadStationTogglePauseResume() {
+    if (uploadStationState.phase === 'paused') {
+        await fetch('/api/upload_station/resume', { method: 'POST' });
+        uploadStationState.phase = 'uploading';
+        setUploadStationPhaseBadge('Uploading', 'cyan');
+        updateUploadStationUI();
+        showToast('Upload resumed.', '▶️');
+    } else {
+        await fetch('/api/upload_station/pause', { method: 'POST' });
+        uploadStationState.phase = 'paused';
+        setUploadStationPhaseBadge('Paused', 'yellow');
+        updateUploadStationUI();
+        showToast('Upload paused.', '⏸️');
+    }
+}
+
+async function uploadStationStopAction() {
+    if (!confirm('Are you sure you want to stop the Upload Station process?')) return;
+    await fetch('/api/upload_station/stop', { method: 'POST' });
+    showToast('Stopping upload…', '⏹️');
+}
+
+function uploadStationClearQueue() {
+    const list = document.getElementById('station-files-list');
+    const emptyMsg = document.getElementById('station-files-empty');
+    const countBadge = document.getElementById('station-feed-count');
+    if (list) list.innerHTML = '';
+    if (emptyMsg) emptyMsg.classList.remove('hidden');
+    if (countBadge) countBadge.textContent = '0 files';
+    showToast('Queue display cleared.', '🧹');
+}
+
+function addOrUpdateStationFileRow(filename, filesize, status, message) {
+    const list = document.getElementById('station-files-list');
+    const emptyMsg = document.getElementById('station-files-empty');
+    const countBadge = document.getElementById('station-feed-count');
+    if (!list) return;
+
+    if (emptyMsg) emptyMsg.classList.add('hidden');
+
+    const rowId = `station-file-${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    let row = document.getElementById(rowId);
+
+    const statusMap = {
+        queued:    { text: 'Queued',    badgeClass: 'badge-gray',    liClass: '' },
+        uploading: { text: 'Uploading', badgeClass: 'badge-purple',  liClass: 'file-item-uploading' },
+        success:   { text: '✓ Done',    badgeClass: 'badge-green',   liClass: 'file-item-success' },
+        duplicate: { text: '✓ In Cloud', badgeClass: 'badge-blue',   liClass: 'file-item-duplicate' },
+        skipped:   { text: 'Skipped',   badgeClass: 'badge-gray',    liClass: 'file-item-skipped' },
+        failed:    { text: '✕ Failed',  badgeClass: 'badge-red',     liClass: 'file-item-error' },
+    };
+
+    const s = statusMap[status] || statusMap.queued;
+
+    if (!row) {
+        row = document.createElement('li');
+        row.id = rowId;
+        row.className = `file-item ${s.liClass}`;
+        list.insertBefore(row, list.firstChild);
+    } else {
+        row.className = `file-item ${s.liClass}`;
+    }
+
+    const sizeStr = filesize ? formatBytes(filesize) : '';
+
+    row.innerHTML = `
+        <div class="file-item-main">
+            <div class="file-item-info">
+                <span class="file-item-name" title="${escapeHtml(filename)}">${escapeHtml(filename)}</span>
+                <span class="file-item-sub">${sizeStr ? sizeStr + ' &middot; ' : ''}${escapeHtml(message || '')}</span>
+            </div>
+            <span class="badge ${s.badgeClass}">${s.text}</span>
+        </div>
+    `;
+
+    if (countBadge) countBadge.textContent = `${list.children.length} files`;
+}
+
+function updateStationFileProgress(filename, bytesSent, filesize) {
+    const rowId = `station-file-${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const row = document.getElementById(rowId);
+    if (!row) return;
+
+    const sub = row.querySelector('.file-item-sub');
+    if (sub) {
+        const pct = filesize > 0 ? Math.round((bytesSent / filesize) * 100) : 0;
+        sub.innerHTML = `${formatBytes(bytesSent)} / ${formatBytes(filesize)} &middot; ${pct}%`;
+    }
+}
+
+async function fetchUploadStationStatus() {
+    try {
+        const res = await fetch('/api/upload_station/status');
+        const s = await res.json();
+        uploadStationState.phase = s.phase;
+        uploadStationState.runId = s.run_id;
+        uploadStationState.current = s.current;
+        uploadStationState.total = s.total;
+        uploadStationState.uploaded = s.uploaded;
+        uploadStationState.failed = s.failed;
+        uploadStationState.skipped = s.skipped;
+        uploadStationState.bytesDone = s.bytes_done;
+        uploadStationState.bytesTotal = s.bytes_total;
+        uploadStationState.speedMbps = s.speed_mbps;
+        uploadStationState.currentFile = s.current_file;
+        updateUploadStationUI();
+    } catch (e) {
+        console.error('fetchUploadStationStatus error:', e);
+    }
+}
+
+async function fetchUploadStationLiveFiles() {
+    try {
+        const res = await fetch('/api/upload_station/live_files');
+        const data = await res.json();
+        const list = document.getElementById('station-files-list');
+        const emptyMsg = document.getElementById('station-files-empty');
+        const countBadge = document.getElementById('station-feed-count');
+        if (!list) return;
+
+        if (!data.files || data.files.length === 0) {
+            if (emptyMsg) emptyMsg.classList.remove('hidden');
+            if (countBadge) countBadge.textContent = '0 files';
+            return;
+        }
+
+        if (emptyMsg) emptyMsg.classList.add('hidden');
+        if (countBadge) countBadge.textContent = `${data.files.length} files`;
+
+        list.innerHTML = '';
+        data.files.forEach(f => {
+            addOrUpdateStationFileRow(f.filename, f.filesize, f.upload_status, f.error_message || (f.upload_status === 'success' ? 'Uploaded OK' : ''));
+        });
+    } catch (e) {
+        console.error('fetchUploadStationLiveFiles error:', e);
+    }
+}
+
+async function fetchUploadStationHistory() {
+    try {
+        const res = await fetch('/api/upload_station/runs');
+        const runs = await res.json();
+        const tbody = document.getElementById('station-history-body');
+        if (!tbody) return;
+
+        if (!runs || runs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="history-empty">No upload sessions yet.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = runs.map((r, i) => {
+            const statusBadge = r.overall_status === 'completed'
+                ? '<span class="badge badge-green">Completed</span>'
+                : r.overall_status === 'running'
+                ? '<span class="badge badge-purple">Running</span>'
+                : r.overall_status === 'stopped'
+                ? '<span class="badge badge-yellow">Stopped</span>'
+                : '<span class="badge badge-red">Failed</span>';
+
+            const hasFailed = r.failed_files > 0;
+            const reuploadBtn = hasFailed
+                ? `<button onclick="uploadStationReupload(${r.id})" class="btn-xs" style="color:var(--red);border-color:var(--red);margin-right:4px;">↺ Re-upload Failed</button>`
+                : '';
+
+            return `
+                <tr id="station-hist-row-${r.id}">
+                    <td><strong>#${r.id}</strong></td>
+                    <td>${formatDateTime(r.start_time)}</td>
+                    <td>${r.total_files} files (${formatBytes(r.total_bytes || 0)})</td>
+                    <td><span class="text-green" style="font-weight:700;">${r.uploaded_files}</span></td>
+                    <td><span class="${r.failed_files > 0 ? 'text-red' : 'text-sub'}" style="font-weight:700;">${r.failed_files}</span></td>
+                    <td><span class="text-sub">${r.skipped_files}</span></td>
+                    <td>${statusBadge}</td>
+                    <td style="text-align:right;">
+                        <div style="display:flex;justify-content:flex-end;gap:4px;">
+                            ${reuploadBtn}
+                            <button onclick="viewUploadStationDetails(${r.id})" class="btn-xs">Details</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('fetchUploadStationHistory error:', e);
+    }
+}
+
+let _stationDetailsPanel = null;
+
+async function viewUploadStationDetails(runId) {
+    if (_stationDetailsPanel) {
+        _stationDetailsPanel.remove();
+        if (_stationDetailsPanel.dataset.runId == runId) {
+            _stationDetailsPanel = null;
+            return;
+        }
+        _stationDetailsPanel = null;
+    }
+
+    const tbody = document.getElementById('station-history-body');
+    const anchorRow = document.getElementById(`station-hist-row-${runId}`);
+    if (!anchorRow || !tbody) return;
+
+    const panelRow = document.createElement('tr');
+    panelRow.dataset.runId = String(runId);
+    panelRow.innerHTML = `
+        <td colspan="8" style="padding:0;background:var(--surface2);border-top:1px solid var(--border)">
+            <div style="padding:14px">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                    <span style="font-size:12px;font-weight:700;color:var(--text)">Files &mdash; Session #${runId}</span>
+                    <button onclick="this.closest('tr').remove(); _stationDetailsPanel = null;" class="btn-ghost-xs">&#10005; Close</button>
+                </div>
+                <div id="station-details-list-${runId}" style="max-height:220px;overflow-y:auto;">
+                    <p style="color:var(--text-sub);font-size:11px;text-align:center;padding:12px">Loading files…</p>
+                </div>
+            </div>
+        </td>
+    `;
+    _stationDetailsPanel = panelRow;
+    anchorRow.insertAdjacentElement('afterend', panelRow);
+
+    try {
+        const res = await fetch(`/api/upload_station/runs/${runId}/files?limit=200`);
+        const files = await res.json();
+        const container = document.getElementById(`station-details-list-${runId}`);
+        if (!container) return;
+
+        if (!files || files.length === 0) {
+            container.innerHTML = '<p style="color:var(--text-sub);font-size:11px;text-align:center;padding:12px">No files found for this session.</p>';
+            return;
+        }
+
+        container.innerHTML = `
+            <table class="history-table" style="font-size:11.5px;background:var(--surface);border-radius:4px;overflow:hidden;">
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Size</th>
+                        <th>Status</th>
+                        <th>Duration / Error</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${files.map(f => {
+                        const statusBadge = f.upload_status === 'success' ? '<span class="badge badge-green">Uploaded</span>'
+                            : f.upload_status === 'duplicate' ? '<span class="badge badge-blue">In Cloud</span>'
+                            : f.upload_status === 'skipped' ? '<span class="badge badge-gray">Skipped</span>'
+                            : '<span class="badge badge-red">Failed</span>';
+                        return `
+                            <tr>
+                                <td style="font-family:monospace;font-weight:500;">${escapeHtml(f.filename)}</td>
+                                <td>${formatBytes(f.filesize)}</td>
+                                <td>${statusBadge}</td>
+                                <td style="color:${f.error_message ? 'var(--red)' : 'var(--text-sub)'}">${f.error_message ? escapeHtml(f.error_message) : (f.duration_seconds ? f.duration_seconds + 's' : '—')}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        `;
+    } catch (e) {
+        console.error('viewUploadStationDetails error:', e);
+    }
+}
+
+async function uploadStationReupload(runId) {
+    try {
+        const res = await fetch(`/api/upload_station/runs/${runId}/reupload`, { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'started') {
+            showToast(`Re-uploading ${data.count} failed file(s)…`, '🚀');
+            switchTab('upload');
+        } else {
+            showToast(data.message || 'Cannot re-upload: files already cleaned up or processed.', '⚠️');
+        }
+    } catch (e) {
+        showToast(`Re-upload error: ${e.message}`, '❌');
+    }
 }

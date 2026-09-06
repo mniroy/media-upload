@@ -2,13 +2,16 @@ import os
 import time
 import datetime
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, BackgroundTasks
+from fastapi import FastAPI, WebSocket, BackgroundTasks, File, UploadFile, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.websockets import WebSocketDisconnect
 from fastapi.responses import RedirectResponse, FileResponse
 from pydantic import BaseModel
 from typing import Dict, List, Optional
-from src.database import SessionLocal, Run, FileRecord, Setting, encrypt_val, decrypt_val
+from src.database import (
+    SessionLocal, Run, FileRecord, Setting, encrypt_val, decrypt_val,
+    UploadStationRun, UploadStationFile
+)
 from src.usb_handler import (
     process_usb, process_local_directory, upload_selected_folders,
     get_staged_folders, get_device_info, get_mount_status, unmount_device,
@@ -18,6 +21,10 @@ from src.usb_handler import (
 from src.ext_drive_handler import (
     get_ext_drive_path, get_ext_drive_status, scan_top_level_folders, start_ext_drive_upload,
     ext_stop, ext_pause, ext_resume, reupload_failed_files,
+)
+from src.upload_station_handler import (
+    upload_station_stop, upload_station_pause, upload_station_resume,
+    process_upload_station_queue, get_upload_staging_dir, is_upload_station_active
 )
 
 main_loop = None
@@ -49,6 +56,19 @@ _live_state = {
     "ext_upload_total": 0,
     "ext_speed_mbps": None,
     "ext_error": None,
+    # --- Upload Station (Drag & Drop web upload) ---
+    "upload_station_phase": "idle",       # idle | uploading | paused | completed | failed | stopped
+    "upload_station_run_id": None,
+    "upload_station_current_file": None,
+    "upload_station_current": 0,
+    "upload_station_total": 0,
+    "upload_station_uploaded": 0,
+    "upload_station_failed": 0,
+    "upload_station_skipped": 0,
+    "upload_station_bytes_done": 0,
+    "upload_station_bytes_total": 0,
+    "upload_station_speed_mbps": None,
+    "upload_station_error": None,
     # --- Live System Network Throughput ---
     "net_rx_mb_s": 0.0,        # Download MB/s
     "net_tx_mb_s": 0.0,        # Upload MB/s
@@ -102,18 +122,22 @@ async def lifespan(app: FastAPI):
     _live_state["auto_copy_enabled"] = setting.value != "false" if setting else True
     db.close()
     
-    # Clean up any ext drive sessions left as "running" from a previous
+    # Clean up any ext drive & upload station sessions left as "running" from a previous
     # service crash or restart — they will never complete now.
     db2 = SessionLocal()
-    from src.database import ExtDriveRun as _EDR
+    from src.database import ExtDriveRun as _EDR, UploadStationRun as _USR
     import datetime as _dt
     stale = db2.query(_EDR).filter(_EDR.overall_status == "running").all()
     for s in stale:
         s.overall_status = "interrupted"
         s.end_time = _dt.datetime.now(_dt.timezone.utc)
-    if stale:
+    stale_upload = db2.query(_USR).filter(_USR.overall_status == "running").all()
+    for su in stale_upload:
+        su.overall_status = "interrupted"
+        su.end_time = _dt.datetime.now(_dt.timezone.utc)
+    if stale or stale_upload:
         db2.commit()
-        print(f"[startup] Marked {len(stale)} stale ext drive session(s) as 'interrupted'")
+        print(f"[startup] Marked {len(stale)} stale ext drive & {len(stale_upload)} stale upload station session(s) as 'interrupted'")
     db2.close()
 
     # Background real-time network throughput sampler (1s interval)
@@ -517,6 +541,186 @@ async def extdrive_reupload_failed(run_id: int, background_tasks: BackgroundTask
     return {"status": "started", "source_run_id": run_id}
 
 # ---------------------------------------------------------------------------
+# Upload Station — Direct Drag & Drop Web Upload
+# ---------------------------------------------------------------------------
+
+@app.post("/api/upload_station/upload")
+async def upload_station_files(
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...)
+):
+    """
+    Accepts one or more files from the drag-and-drop web interface,
+    stages them locally, and starts background streaming upload to Google Photos.
+    """
+    staging_dir = get_upload_staging_dir()
+    file_infos = []
+
+    for file in files:
+        safe_name = os.path.basename(file.filename or f"upload_{int(time.time())}")
+        dest_path = os.path.join(staging_dir, safe_name)
+        if os.path.exists(dest_path):
+            name_parts = os.path.splitext(safe_name)
+            safe_name = f"{name_parts[0]}_{int(time.time()*1000)}{name_parts[1]}"
+            dest_path = os.path.join(staging_dir, safe_name)
+
+        size = 0
+        with open(dest_path, "wb") as f_out:
+            while chunk := await file.read(1024 * 1024):
+                f_out.write(chunk)
+                size += len(chunk)
+
+        file_infos.append({
+            "filename": file.filename or safe_name,
+            "filepath": dest_path,
+            "filesize": size
+        })
+
+    background_tasks.add_task(process_upload_station_queue, file_infos)
+
+    return {
+        "status": "queued",
+        "count": len(file_infos),
+        "files": [f["filename"] for f in file_infos]
+    }
+
+@app.post("/api/upload_station/stop")
+def api_upload_station_stop():
+    upload_station_stop()
+    return {"status": "stopping"}
+
+@app.post("/api/upload_station/pause")
+def api_upload_station_pause():
+    upload_station_pause()
+    return {"status": "paused"}
+
+@app.post("/api/upload_station/resume")
+def api_upload_station_resume():
+    upload_station_resume()
+    return {"status": "resumed"}
+
+@app.get("/api/upload_station/status")
+def api_upload_station_status():
+    return {
+        "phase": _live_state.get("upload_station_phase", "idle"),
+        "run_id": _live_state.get("upload_station_run_id"),
+        "current_file": _live_state.get("upload_station_current_file"),
+        "current": _live_state.get("upload_station_current", 0),
+        "total": _live_state.get("upload_station_total", 0),
+        "uploaded": _live_state.get("upload_station_uploaded", 0),
+        "failed": _live_state.get("upload_station_failed", 0),
+        "skipped": _live_state.get("upload_station_skipped", 0),
+        "bytes_done": _live_state.get("upload_station_bytes_done", 0),
+        "bytes_total": _live_state.get("upload_station_bytes_total", 0),
+        "speed_mbps": _live_state.get("upload_station_speed_mbps"),
+        "error": _live_state.get("upload_station_error"),
+    }
+
+@app.get("/api/upload_station/runs")
+def api_upload_station_runs():
+    db = SessionLocal()
+    runs = db.query(UploadStationRun).order_by(UploadStationRun.id.desc()).all()
+    result = [
+        {
+            "id": r.id,
+            "start_time": r.start_time,
+            "end_time": r.end_time,
+            "overall_status": r.overall_status,
+            "total_files": r.total_files,
+            "uploaded_files": r.uploaded_files,
+            "failed_files": r.failed_files,
+            "skipped_files": r.skipped_files,
+            "total_bytes": r.total_bytes,
+            "uploaded_bytes": r.uploaded_bytes,
+        }
+        for r in runs
+    ]
+    db.close()
+    return result
+
+@app.get("/api/upload_station/runs/{run_id}/files")
+def api_upload_station_run_files(run_id: int, status: Optional[str] = None, limit: int = 200, offset: int = 0):
+    db = SessionLocal()
+    q = db.query(UploadStationFile).filter(UploadStationFile.run_id == run_id)
+    if status:
+        q = q.filter(UploadStationFile.upload_status == status)
+    files = q.order_by(UploadStationFile.id).offset(offset).limit(limit).all()
+    result = [
+        {
+            "id": f.id,
+            "filename": f.filename,
+            "filepath": f.filepath,
+            "filesize": f.filesize,
+            "upload_status": f.upload_status,
+            "error_message": f.error_message,
+            "duration_seconds": f.duration_seconds,
+        }
+        for f in files
+    ]
+    db.close()
+    return result
+
+@app.get("/api/upload_station/live_files")
+def api_upload_station_live_files(limit: int = 150):
+    db = SessionLocal()
+    run = None
+    if _live_state.get("upload_station_run_id"):
+        run = db.query(UploadStationRun).filter(UploadStationRun.id == _live_state["upload_station_run_id"]).first()
+    if not run:
+        run = db.query(UploadStationRun).order_by(UploadStationRun.id.desc()).first()
+    if not run:
+        db.close()
+        return {"run_id": None, "files": []}
+
+    files = db.query(UploadStationFile).filter(
+        UploadStationFile.run_id == run.id
+    ).order_by(UploadStationFile.id.desc()).limit(limit).all()
+
+    result = [
+        {
+            "id": f.id,
+            "filename": f.filename,
+            "filesize": f.filesize,
+            "upload_status": f.upload_status,
+            "error_message": f.error_message,
+            "duration_seconds": f.duration_seconds,
+        }
+        for f in files
+    ]
+    db.close()
+    return {
+        "run_id": run.id,
+        "run_status": run.overall_status,
+        "total_files": run.total_files,
+        "uploaded_files": run.uploaded_files,
+        "failed_files": run.failed_files,
+        "files": result
+    }
+
+@app.post("/api/upload_station/runs/{run_id}/reupload")
+async def api_upload_station_reupload(run_id: int, background_tasks: BackgroundTasks):
+    if _live_state.get("upload_station_phase") == "uploading":
+        return {"status": "already_running"}
+    db = SessionLocal()
+    failed = db.query(UploadStationFile).filter(
+        UploadStationFile.run_id == run_id,
+        UploadStationFile.upload_status == "failed"
+    ).all()
+    file_infos = []
+    for f in failed:
+        if f.filepath and os.path.exists(f.filepath):
+            file_infos.append({
+                "filename": f.filename,
+                "filepath": f.filepath,
+                "filesize": f.filesize
+            })
+    db.close()
+    if not file_infos:
+        return {"status": "no_reuploadable_files", "message": "Original staged files were already processed or cleaned up."}
+    background_tasks.add_task(process_upload_station_queue, file_infos, run_id)
+    return {"status": "started", "count": len(file_infos)}
+
+# ---------------------------------------------------------------------------
 # System Controls
 # ---------------------------------------------------------------------------
 
@@ -683,6 +887,58 @@ def _update_state(event_type: str, data: dict):
         s["ext_speed_mbps"] = None
         if data.get("error"):
             s["ext_error"] = data["error"]
+    # --- Upload Station events ---
+    elif event_type == "upload_station_run_started":
+        s["upload_station_phase"] = "uploading"
+        s["upload_station_run_id"] = data.get("run_id")
+        s["upload_station_total"] = data.get("total_files", 0)
+        s["upload_station_bytes_total"] = data.get("total_bytes", 0)
+        s["upload_station_current"] = 0
+        s["upload_station_uploaded"] = 0
+        s["upload_station_failed"] = 0
+        s["upload_station_skipped"] = 0
+        s["upload_station_bytes_done"] = 0
+        s["upload_station_current_file"] = None
+        s["upload_station_speed_mbps"] = None
+        s["upload_station_error"] = None
+    elif event_type == "upload_station_file_start":
+        s["upload_station_phase"] = "uploading"
+        s["upload_station_current_file"] = data.get("filename")
+        s["upload_station_current"] = data.get("current", 0)
+        s["upload_station_total"] = data.get("total", s["upload_station_total"])
+    elif event_type == "upload_station_progress":
+        s["upload_station_phase"] = "uploading"
+        s["upload_station_current_file"] = data.get("filename")
+        s["upload_station_current"] = data.get("current", 0)
+        s["upload_station_uploaded"] = data.get("uploaded_files", s["upload_station_uploaded"])
+        s["upload_station_failed"] = data.get("failed_files", s["upload_station_failed"])
+        s["upload_station_bytes_done"] = data.get("cum_bytes", 0)
+        s["upload_station_bytes_total"] = data.get("total_bytes", s["upload_station_bytes_total"])
+    elif event_type == "upload_station_speed":
+        s["upload_station_speed_mbps"] = data.get("speed_mbps")
+    elif event_type == "upload_station_file_done":
+        s["upload_station_current_file"] = None
+        if data.get("status") in ("success", "duplicate"):
+            s["upload_station_uploaded"] = s.get("upload_station_uploaded", 0) + 1
+        elif data.get("status") == "skipped":
+            s["upload_station_skipped"] = s.get("upload_station_skipped", 0) + 1
+    elif event_type == "upload_station_file_failed":
+        s["upload_station_current_file"] = None
+        s["upload_station_failed"] = s.get("upload_station_failed", 0) + 1
+    elif event_type == "upload_station_stopped":
+        s["upload_station_phase"] = "stopped"
+        s["upload_station_current_file"] = None
+        s["upload_station_speed_mbps"] = None
+    elif event_type == "upload_station_completed":
+        status_val = data.get("status", "completed")
+        s["upload_station_phase"] = "completed" if status_val in ("completed", "partial_failure") else "failed"
+        s["upload_station_current_file"] = None
+        s["upload_station_speed_mbps"] = None
+        s["upload_station_uploaded"] = data.get("uploaded_files", s["upload_station_uploaded"])
+        s["upload_station_failed"] = data.get("failed_files", s["upload_station_failed"])
+        s["upload_station_skipped"] = data.get("skipped_files", s["upload_station_skipped"])
+        if data.get("error"):
+            s["upload_station_error"] = data["error"]
 
 async def broadcast_event(event_type: str, data: dict):
     _update_state(event_type, data)
