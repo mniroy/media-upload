@@ -15,7 +15,7 @@ const MAX_SPEED_SAMPLES = 5;
 // ---------------------------------------------------------------------------
 // Navigation & Mobile Drawer
 // ---------------------------------------------------------------------------
-const TABS = ['usb', 'extdrive', 'upload', 'files', 'history', 'settings'];
+const TABS = ['usb', 'extdrive', 'upload', 'download', 'files', 'history', 'settings'];
 
 function openSidebarDrawer() {
     const sidebar = document.getElementById('app-sidebar') || document.querySelector('.sidebar');
@@ -117,7 +117,7 @@ function switchTab(tab) {
         const v = document.getElementById(`view-${t}`);
         if (v) { v.classList.add('hidden'); v.classList.remove('active'); }
         document.querySelectorAll(`[data-tab="${t}"]`).forEach(el => {
-            el.classList.remove('nav-active', 'nav-active-ext', 'nav-active-upload', 'active');
+            el.classList.remove('nav-active', 'nav-active-ext', 'nav-active-upload', 'nav-active-download', 'active');
         });
     });
 
@@ -131,6 +131,8 @@ function switchTab(tab) {
             navEl.classList.add('nav-active-ext', 'active');
         } else if (tab === 'upload') {
             navEl.classList.add('nav-active-upload', 'active');
+        } else if (tab === 'download') {
+            navEl.classList.add('nav-active-download', 'active');
         } else {
             navEl.classList.add('nav-active', 'active');
         }
@@ -143,6 +145,7 @@ function switchTab(tab) {
             usb: 'USB Station',
             extdrive: 'Drive Station',
             upload: 'Upload Station',
+            download: 'Download Station',
             files: 'File Explorer',
             history: 'History',
             settings: 'Settings'
@@ -154,6 +157,12 @@ function switchTab(tab) {
     if (tab === 'history') fetchHistory();
     if (tab === 'extdrive') { fetchExtDriveStatus(); fetchExtDriveHistory(); fetchExtLiveFiles(); }
     if (tab === 'upload') { fetchUploadStationStatus(); fetchUploadStationLiveFiles(); fetchUploadStationHistory(); }
+    if (tab === 'download') {
+        initDownloadStationBrowser();
+        fetchDownloadStationStatus();
+        fetchDownloadStationLiveFiles();
+        fetchDownloadStationHistory();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +216,18 @@ function handleWsMessage(event) {
         case 'upload_station_file_failed':   onUploadStationFileFailed(data); break;
         case 'upload_station_stopped':       onUploadStationStopped(data); break;
         case 'upload_station_completed':     onUploadStationCompleted(data); break;
+        // Download Station WS events
+        case 'download_station_run_started':       onDownloadStationRunStarted(data); break;
+        case 'download_station_file_start':         onDownloadStationFileStart(data); break;
+        case 'download_station_download_progress':  onDownloadStationDownloadProgress(data); break;
+        case 'download_station_download_done':      onDownloadStationDownloadDone(data); break;
+        case 'download_station_upload_start':       onDownloadStationUploadStart(data); break;
+        case 'download_station_upload_progress':    onDownloadStationUploadProgress(data); break;
+        case 'download_station_speed':              onDownloadStationSpeed(data); break;
+        case 'download_station_file_done':          onDownloadStationFileDone(data); break;
+        case 'download_station_file_failed':        onDownloadStationFileFailed(data); break;
+        case 'download_station_stopped':            onDownloadStationStopped(data); break;
+        case 'download_station_completed':          onDownloadStationCompleted(data); break;
         case 'net_speed':           onNetSpeed(data); break;
     }
 }
@@ -312,6 +333,25 @@ function onStateSync(s) {
     uploadStationState.currentFile = s.upload_station_current_file;
     updateUploadStationUI();
     fetchUploadStationLiveFiles();
+
+    // Download Station state restore
+    const downloadPhase = s.download_station_phase || 'idle';
+    downloadStationState.phase = downloadPhase;
+    downloadStationState.subphase = s.download_station_subphase || 'idle';
+    downloadStationState.runId = s.download_station_run_id;
+    downloadStationState.current = s.download_station_current || 0;
+    downloadStationState.total = s.download_station_total || 0;
+    downloadStationState.downloaded = s.download_station_downloaded || 0;
+    downloadStationState.uploaded = s.download_station_uploaded || 0;
+    downloadStationState.failed = s.download_station_failed || 0;
+    downloadStationState.skipped = s.download_station_skipped || 0;
+    downloadStationState.bytesDone = s.download_station_bytes_done || 0;
+    downloadStationState.bytesTotal = s.download_station_bytes_total || 0;
+    downloadStationState.speedMbps = s.download_station_speed_mbps;
+    downloadStationState.currentFile = s.download_station_current_file;
+    downloadStationState.destDir = s.download_station_dest_dir || '/mnt/external_drive/Downloads';
+    updateDownloadStationUI();
+    fetchDownloadStationLiveFiles();
 }
 
 // ---------------------------------------------------------------------------
@@ -2175,6 +2215,693 @@ async function uploadStationReupload(runId) {
         }
     } catch (e) {
         showToast(`Re-upload error: ${e.message}`, '❌');
+    }
+}
+
+// =============================================================================
+// Download Station & In-Page Browser
+// =============================================================================
+
+let downloadStationState = {
+    phase: 'idle',           // idle | downloading | uploading | paused | completed | failed | stopped
+    subphase: 'idle',        // downloading | uploading
+    runId: null,
+    current: 0,
+    total: 0,
+    downloaded: 0,
+    uploaded: 0,
+    failed: 0,
+    skipped: 0,
+    bytesDone: 0,
+    bytesTotal: 0,
+    speedMbps: null,
+    currentFile: null,
+    destDir: '/mnt/external_drive/Downloads'
+};
+
+// In-Page Browser Navigation History
+let browserHistory = [];
+let browserHistoryIndex = -1;
+let currentBrowserUrl = 'https://drive.google.com';
+let browserVncInitialized = false;
+
+function initDownloadStationBrowser(targetUrl = 'https://drive.google.com') {
+    const iframe = document.getElementById('browser-iframe');
+    const overlay = document.getElementById('browser-home-overlay');
+    const addressInput = document.getElementById('browser-address-input');
+
+    if (addressInput && !addressInput.value) {
+        addressInput.value = targetUrl;
+    }
+
+    const vncUrl = `http://${window.location.hostname}:6080/vnc.html?autoconnect=true&resize=remote&reconnect=true&show_dot=true`;
+
+    if (iframe) {
+        if (!iframe.src || !iframe.src.includes(':6080')) {
+            iframe.src = vncUrl;
+            browserVncInitialized = true;
+        }
+        iframe.classList.remove('hidden');
+    }
+    if (overlay) {
+        overlay.classList.add('hidden');
+    }
+}
+
+async function browserNavigateTo(url) {
+    if (!url) return;
+    url = url.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        if (url.includes('.') && !url.includes(' ')) {
+            url = 'https://' + url;
+        } else {
+            url = 'https://www.google.com/search?q=' + encodeURIComponent(url);
+        }
+    }
+
+    currentBrowserUrl = url;
+    const addressInput = document.getElementById('browser-address-input');
+    if (addressInput) addressInput.value = url;
+
+    const tabTitle = document.getElementById('browser-tab-title');
+    try {
+        const domain = new URL(url).hostname;
+        if (tabTitle) tabTitle.textContent = domain;
+    } catch (e) {
+        if (tabTitle) tabTitle.textContent = url;
+    }
+
+    initDownloadStationBrowser(url);
+
+    try {
+        await fetch('/api/download_station/browser/navigate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url })
+        });
+    } catch (e) {
+        console.error('Browser navigation error:', e);
+    }
+}
+
+function browserNavigateFromInput() {
+    const input = document.getElementById('browser-address-input');
+    if (input && input.value) {
+        browserNavigateTo(input.value);
+    }
+}
+
+function browserGoBack() {
+    browserNavigateTo(currentBrowserUrl);
+}
+
+function browserGoForward() {
+    browserNavigateTo(currentBrowserUrl);
+}
+
+function browserReload() {
+    const iframe = document.getElementById('browser-iframe');
+    if (iframe) {
+        const vncUrl = `http://${window.location.hostname}:6080/vnc.html?autoconnect=true&resize=remote&reconnect=true&show_dot=true`;
+        iframe.src = vncUrl + `&_t=${Date.now()}`;
+    }
+}
+
+async function browserRestartService() {
+    try {
+        showToast('Restarting browser engine…', '⏳');
+        const res = await fetch('/api/download_station/browser/restart', { method: 'POST' });
+        const data = await res.json();
+        showToast('Browser restarted', '✓');
+        setTimeout(() => {
+            browserReload();
+        }, 1500);
+    } catch (e) {
+        showToast('Failed to restart browser: ' + e.message, '❌');
+    }
+}
+
+function browserGoHome() {
+    browserNavigateTo('https://drive.google.com');
+}
+
+function openCurrentUrlInNewTab() {
+    const url = currentBrowserUrl || (document.getElementById('browser-address-input') ? document.getElementById('browser-address-input').value : '');
+    if (url) {
+        window.open(url, '_blank');
+    } else {
+        showToast('Please enter a web URL first', 'ℹ️');
+    }
+}
+
+function toggleBrowserFullscreen() {
+    const container = document.getElementById('browser-viewport-container');
+    if (container) {
+        container.classList.toggle('browser-viewport-expanded');
+    }
+}
+
+function triggerDownloadFromAddressBar() {
+    const url = currentBrowserUrl || (document.getElementById('browser-address-input') ? document.getElementById('browser-address-input').value : '');
+    if (!url) {
+        showToast('Please enter a URL to download', '⚠️');
+        return;
+    }
+    startDownloadStationPipeline([url]);
+}
+
+function submitDirectDownload() {
+    const input = document.getElementById('direct-dl-url');
+    if (!input || !input.value.trim()) {
+        showToast('Please paste a media URL or Google Drive link', '⚠️');
+        return;
+    }
+    const rawVal = input.value.trim();
+    const urls = rawVal.split(/[\n,]+/).map(u => u.trim()).filter(u => u.length > 0);
+    if (urls.length === 0) return;
+    input.value = '';
+    startDownloadStationPipeline(urls);
+}
+
+async function startDownloadStationPipeline(urls) {
+    try {
+        showToast(`Ingesting ${urls.length} download item(s)…`, '⏳');
+        const res = await fetch('/api/download_station/download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ urls: urls })
+        });
+        const data = await res.json();
+        if (data.status === 'queued') {
+            showToast(`Downloading to External Drive: ${data.count} file(s)`, '🚀');
+            downloadStationState.phase = 'downloading';
+            downloadStationState.total = data.count;
+            updateDownloadStationUI();
+            fetchDownloadStationLiveFiles();
+        } else {
+            showToast(data.message || 'Download failed to start', '❌');
+        }
+    } catch (e) {
+        showToast(`Download error: ${e.message}`, '❌');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Download Station WebSocket telemetry
+// ---------------------------------------------------------------------------
+
+function onDownloadStationRunStarted(data) {
+    downloadStationState.phase = 'downloading';
+    downloadStationState.subphase = 'downloading';
+    downloadStationState.runId = data.run_id;
+    downloadStationState.total = data.total_files || 1;
+    downloadStationState.current = 0;
+    downloadStationState.downloaded = 0;
+    downloadStationState.uploaded = 0;
+    downloadStationState.failed = 0;
+    downloadStationState.skipped = 0;
+    downloadStationState.bytesDone = 0;
+    downloadStationState.bytesTotal = 0;
+    downloadStationState.currentFile = null;
+    downloadStationState.speedMbps = null;
+    if (data.dest_dir) downloadStationState.destDir = data.dest_dir;
+    updateDownloadStationUI();
+    fetchDownloadStationLiveFiles();
+    showToast('Download & Auto-Upload session started', '🚀');
+}
+
+function onDownloadStationFileStart(data) {
+    downloadStationState.phase = 'downloading';
+    downloadStationState.subphase = 'downloading';
+    downloadStationState.current = data.current || 1;
+    downloadStationState.total = data.total || downloadStationState.total;
+    downloadStationState.currentFile = data.filename;
+    updateDownloadStationUI();
+    fetchDownloadStationLiveFiles();
+}
+
+function onDownloadStationDownloadProgress(data) {
+    downloadStationState.phase = 'downloading';
+    downloadStationState.subphase = 'downloading';
+    downloadStationState.current = data.current || downloadStationState.current;
+    downloadStationState.currentFile = data.filename;
+    downloadStationState.bytesDone = data.bytes_downloaded || 0;
+    downloadStationState.bytesTotal = data.total_bytes || 0;
+    updateDownloadStationUI();
+}
+
+function onDownloadStationDownloadDone(data) {
+    downloadStationState.downloaded = (downloadStationState.downloaded || 0) + 1;
+    updateDownloadStationUI();
+    fetchDownloadStationLiveFiles();
+    showToast(`Saved to Ext Drive: ${data.filename}`, '💾');
+}
+
+function onDownloadStationUploadStart(data) {
+    downloadStationState.phase = 'uploading';
+    downloadStationState.subphase = 'uploading';
+    downloadStationState.current = data.current || downloadStationState.current;
+    downloadStationState.currentFile = data.filename;
+    updateDownloadStationUI();
+    fetchDownloadStationLiveFiles();
+}
+
+function onDownloadStationUploadProgress(data) {
+    downloadStationState.phase = 'uploading';
+    downloadStationState.subphase = 'uploading';
+    downloadStationState.current = data.current || downloadStationState.current;
+    downloadStationState.currentFile = data.filename;
+    updateDownloadStationUI();
+}
+
+function onDownloadStationSpeed(data) {
+    downloadStationState.speedMbps = data.speed_mbps;
+    if (data.phase) downloadStationState.subphase = data.phase;
+    updateDownloadStationUI();
+}
+
+function onDownloadStationFileDone(data) {
+    downloadStationState.currentFile = null;
+    if (data.status === 'success' || data.status === 'duplicate') {
+        downloadStationState.uploaded = (downloadStationState.uploaded || 0) + 1;
+    } else if (data.status === 'skipped') {
+        downloadStationState.skipped = (downloadStationState.skipped || 0) + 1;
+    }
+    updateDownloadStationUI();
+    fetchDownloadStationLiveFiles();
+}
+
+function onDownloadStationFileFailed(data) {
+    downloadStationState.currentFile = null;
+    downloadStationState.failed = (downloadStationState.failed || 0) + 1;
+    updateDownloadStationUI();
+    fetchDownloadStationLiveFiles();
+}
+
+function onDownloadStationStopped(data) {
+    downloadStationState.phase = 'stopped';
+    downloadStationState.currentFile = null;
+    downloadStationState.speedMbps = null;
+    updateDownloadStationUI();
+    fetchDownloadStationLiveFiles();
+    fetchDownloadStationHistory();
+    showToast('Download Station stopped.', '⏹️');
+}
+
+function onDownloadStationCompleted(data) {
+    downloadStationState.phase = data.status === 'completed' || data.status === 'partial_failure' ? 'completed' : 'failed';
+    downloadStationState.currentFile = null;
+    downloadStationState.speedMbps = null;
+    if (data.downloaded_files !== undefined) downloadStationState.downloaded = data.downloaded_files;
+    if (data.uploaded_files !== undefined) downloadStationState.uploaded = data.uploaded_files;
+    if (data.failed_files !== undefined) downloadStationState.failed = data.failed_files;
+    if (data.skipped_files !== undefined) downloadStationState.skipped = data.skipped_files;
+    updateDownloadStationUI();
+    fetchDownloadStationLiveFiles();
+    fetchDownloadStationHistory();
+    showToast(`Session finished (${data.status})`, data.status === 'completed' ? '🎉' : '⚠️');
+}
+
+// ---------------------------------------------------------------------------
+// Download Station UI Updates
+// ---------------------------------------------------------------------------
+
+function updateDownloadStationUI() {
+    const s = downloadStationState;
+    const badge = document.getElementById('download-station-badge');
+    const navBadge = document.getElementById('download-nav-badge');
+    const btnPauseResume = document.getElementById('btn-download-pause-resume');
+    const btnStop = document.getElementById('btn-download-stop');
+    const dlPctHero = document.getElementById('download-pct-hero');
+    const dlCount = document.getElementById('download-count');
+    const dlSpeed = document.getElementById('download-speed');
+    const dlSegDone = document.getElementById('download-seg-done');
+    const dlSegRem = document.getElementById('download-seg-rem');
+    const dlActiveBox = document.getElementById('download-active-file-box');
+    const dlActiveName = document.getElementById('download-active-filename');
+    const dlActiveBytes = document.getElementById('download-active-file-bytes');
+    const dlActiveBar = document.getElementById('download-active-file-bar');
+    const dlStatusText = document.getElementById('download-status-text');
+
+    const upBadge = document.getElementById('download-upload-badge');
+    const upPctHero = document.getElementById('download-upload-pct-hero');
+    const upCount = document.getElementById('download-upload-count');
+    const upSpeed = document.getElementById('download-upload-speed');
+    const upSegDone = document.getElementById('download-upload-seg-done');
+    const upSegRem = document.getElementById('download-upload-seg-rem');
+    const upStatusText = document.getElementById('download-upload-status-text');
+
+    // Download Percentage calculation
+    const totalFiles = s.total || 0;
+    const downloadedFiles = s.downloaded || 0;
+    const uploadedFiles = s.uploaded || 0;
+
+    let dlPct = totalFiles > 0 ? Math.round((downloadedFiles / totalFiles) * 100) : 0;
+    if (s.phase === 'downloading' && s.bytesTotal > 0 && totalFiles > 0) {
+        const filePct = s.bytesDone / s.bytesTotal;
+        dlPct = Math.min(99, Math.round(((downloadedFiles + filePct) / totalFiles) * 100));
+    } else if (s.phase === 'completed') {
+        dlPct = 100;
+    }
+
+    let upPct = totalFiles > 0 ? Math.round((uploadedFiles / totalFiles) * 100) : 0;
+    if (s.phase === 'completed') {
+        upPct = totalFiles > 0 ? Math.round((uploadedFiles / totalFiles) * 100) : 100;
+    }
+
+    if (dlPctHero) dlPctHero.innerHTML = `${dlPct}<span class="stat-unit">%</span>`;
+    if (dlCount) dlCount.textContent = `${downloadedFiles} / ${totalFiles} files saved`;
+    if (dlSegDone) dlSegDone.style.width = `${dlPct}%`;
+    if (dlSegRem) dlSegRem.style.width = `${100 - dlPct}%`;
+
+    if (upPctHero) upPctHero.innerHTML = `${upPct}<span class="stat-unit">%</span>`;
+    if (upCount) upCount.textContent = `${uploadedFiles} / ${totalFiles} files uploaded`;
+    if (upSegDone) upSegDone.style.width = `${upPct}%`;
+    if (upSegRem) upSegRem.style.width = `${100 - upPct}%`;
+
+    // Speed display
+    const speedStr = s.speedMbps !== null && s.speedMbps !== undefined ? `${Number(s.speedMbps).toFixed(2)} MB/s` : '— MB/s';
+    if (s.subphase === 'downloading') {
+        if (dlSpeed) dlSpeed.textContent = speedStr;
+        if (upSpeed) upSpeed.textContent = '— MB/s';
+    } else if (s.subphase === 'uploading') {
+        if (dlSpeed) dlSpeed.textContent = 'Done';
+        if (upSpeed) upSpeed.textContent = speedStr;
+    } else {
+        if (dlSpeed) dlSpeed.textContent = '— MB/s';
+        if (upSpeed) upSpeed.textContent = '— MB/s';
+    }
+
+    // Active file progress
+    if (s.currentFile && (s.phase === 'downloading' || s.phase === 'uploading')) {
+        if (dlActiveBox) dlActiveBox.classList.remove('hidden');
+        if (dlActiveName) dlActiveName.textContent = s.currentFile;
+        if (s.bytesTotal > 0) {
+            const pct = Math.round((s.bytesDone / s.bytesTotal) * 100);
+            if (dlActiveBytes) dlActiveBytes.textContent = `${formatBytes(s.bytesDone)} / ${formatBytes(s.bytesTotal)} (${pct}%)`;
+            if (dlActiveBar) dlActiveBar.style.width = `${pct}%`;
+        } else {
+            if (dlActiveBytes) dlActiveBytes.textContent = formatBytes(s.bytesDone);
+            if (dlActiveBar) dlActiveBar.style.width = '50%';
+        }
+    } else {
+        if (dlActiveBox) dlActiveBox.classList.add('hidden');
+    }
+
+    // Status badges & text
+    if (badge) {
+        badge.className = 'badge';
+        if (s.phase === 'downloading') {
+            badge.classList.add('badge-blue');
+            badge.textContent = `Downloading (${s.current}/${s.total})`;
+        } else if (s.phase === 'uploading') {
+            badge.classList.add('badge-purple');
+            badge.textContent = `Uploading (${s.current}/${s.total})`;
+        } else if (s.phase === 'paused') {
+            badge.classList.add('badge-yellow');
+            badge.textContent = 'Paused';
+        } else if (s.phase === 'completed') {
+            badge.classList.add('badge-green');
+            badge.textContent = 'Complete';
+        } else if (s.phase === 'failed') {
+            badge.classList.add('badge-red');
+            badge.textContent = 'Error';
+        } else if (s.phase === 'stopped') {
+            badge.classList.add('badge-gray');
+            badge.textContent = 'Stopped';
+        } else {
+            badge.classList.add('badge-gray');
+            badge.textContent = 'Idle';
+        }
+    }
+
+    if (navBadge) {
+        if (s.phase === 'downloading' || s.phase === 'uploading') {
+            navBadge.classList.remove('hidden');
+            navBadge.textContent = s.phase === 'downloading' ? 'DL' : 'UP';
+            navBadge.style.background = s.phase === 'downloading' ? 'var(--cyan)' : 'var(--purple)';
+        } else {
+            navBadge.classList.add('hidden');
+        }
+    }
+
+    if (btnPauseResume && btnStop) {
+        if (s.phase === 'downloading' || s.phase === 'uploading' || s.phase === 'paused') {
+            btnPauseResume.classList.remove('hidden');
+            btnStop.classList.remove('hidden');
+            const pauseText = document.getElementById('download-pause-text');
+            if (pauseText) pauseText.textContent = s.phase === 'paused' ? '▶ Resume' : '⏸ Pause';
+        } else {
+            btnPauseResume.classList.add('hidden');
+            btnStop.classList.add('hidden');
+        }
+    }
+
+    if (dlStatusText) {
+        if (s.phase === 'downloading') dlStatusText.textContent = `Saving media to ${s.destDir}…`;
+        else if (s.phase === 'uploading') dlStatusText.textContent = `Download finished. Streaming to Google Photos…`;
+        else if (s.phase === 'completed') dlStatusText.textContent = `All files saved to ${s.destDir} and uploaded to Google Photos.`;
+        else if (s.phase === 'paused') dlStatusText.textContent = 'Download station paused.';
+        else dlStatusText.textContent = `Target directory: ${s.destDir}`;
+    }
+
+    if (upStatusText) {
+        if (s.phase === 'uploading') upStatusText.textContent = `Uploading ${s.current}/${s.total}: ${s.currentFile || ''}`;
+        else if (s.phase === 'completed') upStatusText.textContent = `Upload complete. Stored in Google Photos and External Drive.`;
+        else upStatusText.textContent = 'Files are automatically uploaded to Google Photos once download finishes.';
+    }
+}
+
+async function downloadStationTogglePauseResume() {
+    try {
+        if (downloadStationState.phase === 'paused') {
+            await fetch('/api/download_station/resume', { method: 'POST' });
+            downloadStationState.phase = downloadStationState.subphase || 'downloading';
+            showToast('Download Station resumed', '▶️');
+        } else {
+            await fetch('/api/download_station/pause', { method: 'POST' });
+            downloadStationState.phase = 'paused';
+            showToast('Download Station paused', '⏸️');
+        }
+        updateDownloadStationUI();
+    } catch (e) {
+        showToast(`Control error: ${e.message}`, '❌');
+    }
+}
+
+async function downloadStationStopAction() {
+    try {
+        await fetch('/api/download_station/stop', { method: 'POST' });
+        downloadStationState.phase = 'stopped';
+        updateDownloadStationUI();
+        showToast('Stopping Download Station…', '⏹️');
+    } catch (e) {
+        showToast(`Stop error: ${e.message}`, '❌');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Download Station Live Queue & History Fetchers
+// ---------------------------------------------------------------------------
+
+async function fetchDownloadStationStatus() {
+    try {
+        const res = await fetch('/api/download_station/status');
+        const data = await res.json();
+        downloadStationState.phase = data.phase || 'idle';
+        downloadStationState.subphase = data.subphase || 'idle';
+        downloadStationState.runId = data.run_id;
+        downloadStationState.current = data.current || 0;
+        downloadStationState.total = data.total || 0;
+        downloadStationState.downloaded = data.downloaded || 0;
+        downloadStationState.uploaded = data.uploaded || 0;
+        downloadStationState.failed = data.failed || 0;
+        downloadStationState.skipped = data.skipped || 0;
+        downloadStationState.bytesDone = data.bytes_done || 0;
+        downloadStationState.bytesTotal = data.bytes_total || 0;
+        downloadStationState.speedMbps = data.speed_mbps;
+        downloadStationState.currentFile = data.current_file;
+        if (data.dest_dir) downloadStationState.destDir = data.dest_dir;
+        updateDownloadStationUI();
+    } catch (e) {
+        console.error('fetchDownloadStationStatus error:', e);
+    }
+}
+
+async function fetchDownloadStationLiveFiles() {
+    try {
+        const res = await fetch('/api/download_station/live_files');
+        const data = await res.json();
+        renderDownloadStationLiveFiles(data.files || []);
+    } catch (e) {
+        console.error('fetchDownloadStationLiveFiles error:', e);
+    }
+}
+
+function renderDownloadStationLiveFiles(files) {
+    const list = document.getElementById('download-files-list');
+    const empty = document.getElementById('download-files-empty');
+    const countBadge = document.getElementById('download-feed-count');
+
+    if (!list) return;
+    if (countBadge) countBadge.textContent = `${files.length} file${files.length === 1 ? '' : 's'}`;
+
+    if (!files || files.length === 0) {
+        list.innerHTML = '';
+        if (empty) empty.classList.remove('hidden');
+        return;
+    }
+    if (empty) empty.classList.add('hidden');
+
+    list.innerHTML = files.map(f => {
+        let statusBadge = '<span class="status-pill status-pill-pending">Downloading</span>';
+        if (f.upload_status === 'success') {
+            statusBadge = '<span class="status-pill status-pill-success">✓ Uploaded</span>';
+        } else if (f.upload_status === 'duplicate') {
+            statusBadge = '<span class="status-pill status-pill-duplicate">Duplicate</span>';
+        } else if (f.upload_status === 'uploading') {
+            statusBadge = '<span class="status-pill status-pill-uploading">Uploading</span>';
+        } else if (f.download_status === 'downloaded' && f.upload_status === 'pending') {
+            statusBadge = '<span class="status-pill status-pill-amber">Downloaded</span>';
+        } else if (f.download_status === 'failed' || f.upload_status === 'failed') {
+            statusBadge = `<span class="status-pill status-pill-failed" title="${escapeHtml(f.error_message || '')}">✗ Failed</span>`;
+        }
+
+        const sizeStr = f.filesize ? formatBytes(f.filesize) : '';
+        const durStr = f.upload_duration ? `${f.upload_duration}s` : (f.download_duration ? `${f.download_duration}s dl` : '');
+
+        return `
+            <li class="file-item">
+                <div class="file-item-left">
+                    <div class="file-type-icon">📥</div>
+                    <div class="file-info-text">
+                        <span class="file-name" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</span>
+                        <span class="file-meta">${sizeStr ? sizeStr + ' · ' : ''}${escapeHtml(f.source_url || '')}</span>
+                    </div>
+                </div>
+                <div class="file-item-right">
+                    ${durStr ? `<span class="file-duration">${durStr}</span>` : ''}
+                    ${statusBadge}
+                </div>
+            </li>
+        `;
+    }).join('');
+}
+
+async function fetchDownloadStationHistory() {
+    try {
+        const res = await fetch('/api/download_station/runs');
+        const runs = await res.json();
+        renderDownloadStationHistory(runs || []);
+    } catch (e) {
+        console.error('fetchDownloadStationHistory error:', e);
+    }
+}
+
+function renderDownloadStationHistory(runs) {
+    const tbody = document.getElementById('download-history-body');
+    if (!tbody) return;
+
+    if (!runs || runs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="history-empty">No download sessions yet.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = runs.map(r => {
+        let statusBadge = `<span class="status-pill status-pill-${r.overall_status}">${r.overall_status}</span>`;
+        const timeStr = r.start_time ? formatRelativeTime(r.start_time) : '—';
+        const sourceUrlTrunc = r.source_url ? (r.source_url.length > 35 ? r.source_url.slice(0, 35) + '…' : r.source_url) : 'web_browser';
+
+        return `
+            <tr class="history-row" onclick="viewDownloadStationDetails(${r.id}, event)">
+                <td class="cell-id">#${r.id}</td>
+                <td><span class="history-time">${timeStr}</span></td>
+                <td><span class="url-snippet" title="${escapeHtml(r.source_url || '')}">${escapeHtml(sourceUrlTrunc)}</span></td>
+                <td>${r.total_files || 0}</td>
+                <td class="text-cyan">${r.downloaded_files || 0}</td>
+                <td class="text-green">${r.uploaded_files || 0}</td>
+                <td class="${r.failed_files > 0 ? 'text-red' : ''}">${r.failed_files || 0}</td>
+                <td>${statusBadge}</td>
+                <td style="text-align:right;">
+                    ${r.failed_files > 0 ? `<button onclick="retryDownloadRun(${r.id}); event.stopPropagation();" class="btn-xs" style="background:var(--red-soft);color:var(--red);border-color:var(--red);">Retry</button>` : ''}
+                </td>
+            </tr>
+            <tr id="download-details-${r.id}" class="history-details-row hidden">
+                <td colspan="9" id="download-details-content-${r.id}" class="history-details-cell">
+                    <div class="history-loading">Loading files…</div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function viewDownloadStationDetails(runId, event) {
+    const row = document.getElementById(`download-details-${runId}`);
+    const content = document.getElementById(`download-details-content-${runId}`);
+    if (!row || !content) return;
+
+    if (!row.classList.contains('hidden')) {
+        row.classList.add('hidden');
+        return;
+    }
+
+    row.classList.remove('hidden');
+    content.innerHTML = '<div class="history-loading">Loading file records…</div>';
+
+    try {
+        const res = await fetch(`/api/download_station/runs/${runId}/files?limit=200`);
+        const files = await res.json();
+
+        if (!files || files.length === 0) {
+            content.innerHTML = '<p class="file-empty" style="padding:12px;">No file records found for this session.</p>';
+            return;
+        }
+
+        content.innerHTML = `
+            <table class="nested-files-table">
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Path on Ext Drive</th>
+                        <th>Size</th>
+                        <th>Download Status</th>
+                        <th>Upload Status</th>
+                        <th>Error / Duration</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${files.map(f => {
+                        return `
+                            <tr>
+                                <td class="cell-filename">${escapeHtml(f.filename || '—')}</td>
+                                <td class="cell-path" title="${escapeHtml(f.filepath || '')}">${escapeHtml(f.filepath || '—')}</td>
+                                <td>${f.filesize ? formatBytes(f.filesize) : '—'}</td>
+                                <td><span class="status-pill status-pill-${f.download_status}">${f.download_status}</span></td>
+                                <td><span class="status-pill status-pill-${f.upload_status}">${f.upload_status}</span></td>
+                                <td style="color:${f.error_message ? 'var(--red)' : 'var(--text-sub)'}">${f.error_message ? escapeHtml(f.error_message) : (f.upload_duration ? f.upload_duration + 's' : '—')}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        `;
+    } catch (e) {
+        console.error('viewDownloadStationDetails error:', e);
+    }
+}
+
+async function retryDownloadRun(runId) {
+    try {
+        const res = await fetch(`/api/download_station/runs/${runId}/retry`, { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'started') {
+            showToast(`Retrying ${data.count} failed item(s)…`, '🚀');
+            switchTab('download');
+        } else {
+            showToast(data.message || 'Cannot retry.', '⚠️');
+        }
+    } catch (e) {
+        showToast(`Retry error: ${e.message}`, '❌');
     }
 }
 

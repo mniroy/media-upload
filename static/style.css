@@ -40,6 +40,10 @@
     --upload-soft: #f0f9ff;
     --upload-mid:  #bae6fd;
 
+    --download:      #0891b2;
+    --download-soft: #ecfeff;
+    --download-mid:  #a5f3fc;
+
     /* Status */
     --green:       #2a7e5c;
     --green-soft:  #eaf4ef;
@@ -319,11 +323,20 @@ body {
 .nav-icon-usb { color: var(--usb); }
 .nav-icon-ext { color: var(--ext); }
 .nav-icon-upload { color: var(--upload); }
+.nav-icon-download { color: var(--download); }
 
 .nav-item.nav-active .nav-icon-usb { color: var(--usb); }
 .nav-item.nav-active-ext .nav-icon-ext { color: var(--ext); }
 .nav-item.nav-active-upload .nav-icon-upload { color: var(--upload); }
+.nav-item.nav-active-download .nav-icon-download { color: var(--download); }
+
 .nav-item.nav-active-upload {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow);
+}
+
+.nav-item.nav-active-download {
     background: var(--surface);
     color: var(--text);
     box-shadow: var(--shadow);
@@ -1323,6 +1336,14 @@ select.form-input { cursor: pointer; }
     color: var(--ext);
 }
 
+.bottom-nav-item.active[data-tab="upload"] {
+    color: var(--upload);
+}
+
+.bottom-nav-item.active[data-tab="download"] {
+    color: var(--download);
+}
+
 /* =============================================================
    RESPONSIVE MEDIA QUERIES
    ============================================================= */
@@ -1793,3 +1814,449 @@ select.form-input { cursor: pointer; }
     border-left: 3px solid var(--text-faint) !important;
     opacity: 0.8;
 }
+
+/* =============================================================
+   DOWNLOAD STATION & IN-PAGE BROWSER STYLES
+   ============================================================= */
+
+.station-icon-download {
+    color: var(--download);
+    background: var(--download-soft);
+    border: 1px solid var(--download-mid);
+}
+
+.browser-station-card {
+    padding: 0 !important;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    background: var(--surface);
+    border-radius: var(--radius);
+}
+
+.browser-window-header {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    user-select: none;
+}
+
+.browser-window-dots {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.browser-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.dot-red    { background: #ff5f56; border: 1px solid #e0443e; }
+.dot-yellow { background: #ffbd2e; border: 1px solid #dea123; }
+.dot-green  { background: #27c93f; border: 1px solid #1aab29; }
+
+.browser-window-tabs {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+}
+
+.browser-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    padding: 5px 12px;
+    border-radius: 6px 6px 0 0;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text);
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.browser-window-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Browser Navigation Toolbar */
+.browser-toolbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.browser-nav-btn-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.browser-nav-btn {
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-sub);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.browser-nav-btn:hover {
+    background: var(--border);
+    color: var(--text);
+}
+
+.browser-address-wrap {
+    flex: 1;
+    min-width: 240px;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.browser-address-icon {
+    position: absolute;
+    left: 10px;
+    color: var(--text-faint);
+    display: flex;
+    align-items: center;
+    pointer-events: none;
+}
+
+.browser-address-input {
+    width: 100%;
+    height: 32px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0 44px 0 32px;
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--text);
+    outline: none;
+    transition: all var(--transition);
+}
+
+.browser-address-input:focus {
+    background: var(--surface);
+    border-color: var(--download);
+    box-shadow: 0 0 0 2px var(--download-mid);
+}
+
+.browser-go-btn {
+    position: absolute;
+    right: 4px;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 4px;
+    background: var(--download);
+    color: #fff;
+    border: none;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition);
+}
+
+.browser-go-btn:hover {
+    filter: brightness(1.1);
+}
+
+.browser-action-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-download-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--download);
+    color: #fff;
+    border: none;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(8, 145, 178, 0.25);
+    transition: all var(--transition);
+}
+
+.btn-download-action:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+}
+
+/* Bookmarks Quick-Bar */
+.browser-bookmarks-bar {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.browser-bookmarks-bar::-webkit-scrollbar {
+    display: none;
+}
+
+.bookmarks-label {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+}
+
+.bookmarks-pills {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.bookmark-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-sub);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all var(--transition);
+}
+
+.bookmark-pill:hover {
+    background: var(--download-soft);
+    border-color: var(--download-mid);
+    color: var(--download);
+}
+
+.bm-icon {
+    font-size: 11px;
+}
+
+/* Viewport Container & Home Screen */
+.browser-viewport-container {
+    position: relative;
+    width: 100%;
+    min-height: 480px;
+    height: 560px;
+    max-height: 75vh;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    transition: height 0.3s ease;
+}
+
+.browser-viewport-expanded {
+    height: 82vh !important;
+    max-height: 85vh !important;
+}
+
+.browser-iframe {
+    width: 100%;
+    height: 100%;
+    flex: 1;
+    border: none;
+    background: #ffffff;
+}
+
+.browser-home-overlay {
+    width: 100%;
+    height: 100%;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 20px;
+    background: radial-gradient(circle at 50% 30%, var(--download-soft) 0%, var(--surface2) 100%);
+    overflow-y: auto;
+}
+
+.browser-home-hero {
+    max-width: 640px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 14px;
+}
+
+.browser-home-icon {
+    width: 68px;
+    height: 68px;
+    border-radius: 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--download);
+}
+
+.browser-home-title {
+    font-size: 21px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.4px;
+}
+
+.browser-home-desc {
+    font-size: 13px;
+    color: var(--text-sub);
+    line-height: 1.5;
+}
+
+.browser-home-desc code {
+    background: var(--surface);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    font-size: 11.5px;
+    color: var(--download);
+}
+
+.direct-download-box {
+    width: 100%;
+    margin-top: 6px;
+}
+
+.direct-dl-input-row {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+
+.browser-quick-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    width: 100%;
+    margin-top: 10px;
+}
+
+@media (max-width: 640px) {
+    .browser-quick-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .direct-dl-input-row {
+        flex-direction: column;
+    }
+}
+
+.quick-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 4px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    transition: all var(--transition);
+}
+
+.quick-card:hover {
+    border-color: var(--download-mid);
+    box-shadow: 0 4px 14px rgba(8, 145, 178, 0.12);
+    transform: translateY(-2px);
+}
+
+.quick-card-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    margin-bottom: 2px;
+}
+
+.quick-card-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.quick-card-sub {
+    font-size: 10px;
+    color: var(--text-faint);
+    line-height: 1.2;
+}
+
+/* Download specific utility styles */
+.seg-cyan  { background: var(--download) !important; }
+.fill-cyan { background: var(--download) !important; }
+.text-cyan { color: var(--download) !important; }
+.icon-cyan { color: var(--download); background: var(--download-soft); }
+
+.status-pill-downloading {
+    background: var(--download-soft);
+    color: var(--download);
+    border: 1px solid var(--download-mid);
+}
+
+.status-pill-downloaded {
+    background: var(--ext-soft);
+    color: var(--ext);
+    border: 1px solid var(--ext-mid);
+}
+
+.status-pill-amber {
+    background: var(--ext-soft);
+    color: var(--ext);
+    border: 1px solid var(--ext-mid);
+}
+
+.status-pill-pending {
+    background: var(--surface2);
+    color: var(--text-sub);
+    border: 1px solid var(--border);
+}
+

@@ -119,6 +119,42 @@ class UploadStationFile(Base):
     duration_seconds = Column(Integer, default=0)
 
 # ---------------------------------------------------------------------------
+# Download Station tables — In-page browser & Web download pipeline
+# ---------------------------------------------------------------------------
+
+class DownloadStationRun(Base):
+    """One web/browser download & auto-upload session."""
+    __tablename__ = "download_station_runs"
+    id = Column(Integer, primary_key=True, index=True)
+    source_url = Column(String, nullable=True)
+    start_time = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    end_time = Column(DateTime, nullable=True)
+    overall_status = Column(String, default="running")  # running | completed | failed | stopped | paused
+    total_files = Column(Integer, default=0)
+    downloaded_files = Column(Integer, default=0)
+    uploaded_files = Column(Integer, default=0)
+    failed_files = Column(Integer, default=0)
+    skipped_files = Column(Integer, default=0)
+    total_bytes = Column(Integer, default=0)
+    downloaded_bytes = Column(Integer, default=0)
+    uploaded_bytes = Column(Integer, default=0)
+
+class DownloadStationFile(Base):
+    """Per-file record for a downloaded and auto-uploaded media file."""
+    __tablename__ = "download_station_files"
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(Integer, index=True)
+    source_url = Column(String, nullable=True)
+    filename = Column(String)
+    filepath = Column(String, nullable=True)     # Saved path on external drive (or fallback staging)
+    filesize = Column(Integer, default=0)
+    download_status = Column(String, default="downloading")  # downloading | downloaded | failed | cancelled
+    upload_status = Column(String, default="pending")      # pending | uploading | success | duplicate | failed | skipped
+    error_message = Column(String, nullable=True)
+    download_duration = Column(Integer, default=0)
+    upload_duration = Column(Integer, default=0)
+
+# ---------------------------------------------------------------------------
 # Unified Uploaded Media Registry (Cross-station deduplication)
 # ---------------------------------------------------------------------------
 
@@ -130,7 +166,7 @@ class UploadedMediaRegistry(Base):
     filepath = Column(String, nullable=True)
     filesize = Column(Integer, nullable=True)
     sha1_hash = Column(String, nullable=True, index=True)
-    source_station = Column(String, default="unknown")  # "usb" | "extdrive" | "upload_station"
+    source_station = Column(String, default="unknown")  # "usb" | "extdrive" | "upload_station" | "download_station"
     remote_key = Column(String, nullable=True)
     uploaded_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
@@ -138,7 +174,7 @@ Base.metadata.create_all(bind=engine)
 
 def is_media_already_uploaded(db, filename: str, filepath: str = None, filesize: int = None, sha1_hash: str = None) -> bool:
     """
-    Check if a file was uploaded by ANY station (USB Station, Drive Station, or Upload Station).
+    Check if a file was uploaded by ANY station (USB Station, Drive Station, Upload Station, or Download Station).
     """
     if sha1_hash:
         rec = db.query(UploadedMediaRegistry).filter(UploadedMediaRegistry.sha1_hash == sha1_hash).first()
@@ -173,6 +209,13 @@ def is_media_already_uploaded(db, filename: str, filepath: str = None, filesize:
         if db.query(UploadStationFile).filter(
             UploadStationFile.filename == base_name,
             UploadStationFile.upload_status.in_(["success", "duplicate"])
+        ).first():
+            return True
+
+        # Check DownloadStationFile (Download Station)
+        if db.query(DownloadStationFile).filter(
+            DownloadStationFile.filename == base_name,
+            DownloadStationFile.upload_status.in_(["success", "duplicate"])
         ).first():
             return True
 
@@ -216,3 +259,4 @@ def register_uploaded_media(db, filename: str, filepath: str = None, filesize: i
         print(f"[database] register_uploaded_media failed: {e}")
         db.rollback()
         return None
+

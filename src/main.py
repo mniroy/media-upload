@@ -2,7 +2,7 @@ import os
 import time
 import datetime
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, BackgroundTasks, File, UploadFile, Form
+from fastapi import FastAPI, WebSocket, BackgroundTasks, File, UploadFile, Form, Request, Response, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.websockets import WebSocketDisconnect
 from fastapi.responses import RedirectResponse, FileResponse
@@ -10,7 +10,8 @@ from pydantic import BaseModel
 from typing import Dict, List, Optional
 from src.database import (
     SessionLocal, Run, FileRecord, Setting, encrypt_val, decrypt_val,
-    UploadStationRun, UploadStationFile
+    UploadStationRun, UploadStationFile,
+    DownloadStationRun, DownloadStationFile
 )
 from src.usb_handler import (
     process_usb, process_local_directory, upload_selected_folders,
@@ -25,6 +26,12 @@ from src.ext_drive_handler import (
 from src.upload_station_handler import (
     upload_station_stop, upload_station_pause, upload_station_resume,
     process_upload_station_queue, get_upload_staging_dir, is_upload_station_active
+)
+from src.download_station_handler import (
+    download_station_stop, download_station_pause, download_station_resume,
+    process_download_station_queue, get_download_dest_dir, is_download_station_active,
+    fetch_proxied_web_resource, start_download_folder_watcher,
+    browser_navigate_url, browser_restart_service, browser_get_status
 )
 
 main_loop = None
@@ -69,6 +76,22 @@ _live_state = {
     "upload_station_bytes_total": 0,
     "upload_station_speed_mbps": None,
     "upload_station_error": None,
+    # --- Download Station (In-page Browser & Web Media Ingestion) ---
+    "download_station_phase": "idle",     # idle | downloading | uploading | paused | completed | failed | stopped
+    "download_station_subphase": "idle",  # downloading | uploading
+    "download_station_run_id": None,
+    "download_station_current_file": None,
+    "download_station_current": 0,
+    "download_station_total": 0,
+    "download_station_downloaded": 0,
+    "download_station_uploaded": 0,
+    "download_station_failed": 0,
+    "download_station_skipped": 0,
+    "download_station_bytes_done": 0,
+    "download_station_bytes_total": 0,
+    "download_station_speed_mbps": None,
+    "download_station_dest_dir": "/mnt/external_drive/Downloads",
+    "download_station_error": None,
     # --- Live System Network Throughput ---
     "net_rx_mb_s": 0.0,        # Download MB/s
     "net_tx_mb_s": 0.0,        # Upload MB/s
@@ -122,10 +145,10 @@ async def lifespan(app: FastAPI):
     _live_state["auto_copy_enabled"] = setting.value != "false" if setting else True
     db.close()
     
-    # Clean up any ext drive & upload station sessions left as "running" from a previous
+    # Clean up any ext drive, upload station & download station sessions left as "running" from a previous
     # service crash or restart — they will never complete now.
     db2 = SessionLocal()
-    from src.database import ExtDriveRun as _EDR, UploadStationRun as _USR
+    from src.database import ExtDriveRun as _EDR, UploadStationRun as _USR, DownloadStationRun as _DSR
     import datetime as _dt
     stale = db2.query(_EDR).filter(_EDR.overall_status == "running").all()
     for s in stale:
@@ -135,10 +158,15 @@ async def lifespan(app: FastAPI):
     for su in stale_upload:
         su.overall_status = "interrupted"
         su.end_time = _dt.datetime.now(_dt.timezone.utc)
-    if stale or stale_upload:
+    stale_download = db2.query(_DSR).filter(_DSR.overall_status == "running").all()
+    for sd in stale_download:
+        sd.overall_status = "interrupted"
+        sd.end_time = _dt.datetime.now(_dt.timezone.utc)
+    if stale or stale_upload or stale_download:
         db2.commit()
-        print(f"[startup] Marked {len(stale)} stale ext drive & {len(stale_upload)} stale upload station session(s) as 'interrupted'")
-    db2.close()
+        print(f"[startup] Marked {len(stale)} stale ext drive, {len(stale_upload)} stale upload station & {len(stale_download)} stale download station session(s) as 'interrupted'")
+    # Start background download folder auto-uploader watcher
+    start_download_folder_watcher()
 
     # Background real-time network throughput sampler (1s interval)
     async def _net_stats_loop():
@@ -203,6 +231,11 @@ class SettingsPayload(BaseModel):
 class UploadSelectedPayload(BaseModel):
     run_id: int
     folders: List[str]
+
+class DownloadStationDownloadPayload(BaseModel):
+    urls: Optional[List[str]] = None
+    url: Optional[str] = None
+    filename: Optional[str] = None
 
 # ---------------------------------------------------------------------------
 # Settings
@@ -725,6 +758,231 @@ async def api_upload_station_reupload(run_id: int, background_tasks: BackgroundT
     return {"status": "started", "count": len(file_infos)}
 
 # ---------------------------------------------------------------------------
+# Download Station — In-Page Web Browser & Cloud Ingestion
+# ---------------------------------------------------------------------------
+
+@app.post("/api/download_station/download")
+async def api_download_station_download(
+    payload: DownloadStationDownloadPayload,
+    background_tasks: BackgroundTasks
+):
+    """
+    Queue one or more URLs for download to the external drive,
+    followed by automatic streaming upload to Google Photos upon completion.
+    """
+    items = []
+    if payload.urls:
+        for u in payload.urls:
+            if u and u.strip():
+                items.append({"url": u.strip()})
+    elif payload.url and payload.url.strip():
+        items.append({
+            "url": payload.url.strip(),
+            "filename": payload.filename
+        })
+
+    if not items:
+        return {"status": "error", "message": "No valid URLs provided"}
+
+    source_url = items[0]["url"] if len(items) == 1 else f"{len(items)} URLs"
+    background_tasks.add_task(process_download_station_queue, items, source_url)
+
+    return {
+        "status": "queued",
+        "count": len(items),
+        "items": items,
+        "dest_dir": get_download_dest_dir()
+    }
+
+@app.post("/api/download_station/stop")
+def api_download_station_stop():
+    download_station_stop()
+    return {"status": "stopping"}
+
+@app.post("/api/download_station/pause")
+def api_download_station_pause():
+    download_station_pause()
+    return {"status": "paused"}
+
+@app.post("/api/download_station/resume")
+def api_download_station_resume():
+    download_station_resume()
+    return {"status": "resumed"}
+
+@app.get("/api/download_station/status")
+def api_download_station_status():
+    return {
+        "phase": _live_state.get("download_station_phase", "idle"),
+        "subphase": _live_state.get("download_station_subphase", "idle"),
+        "run_id": _live_state.get("download_station_run_id"),
+        "current_file": _live_state.get("download_station_current_file"),
+        "current": _live_state.get("download_station_current", 0),
+        "total": _live_state.get("download_station_total", 0),
+        "downloaded": _live_state.get("download_station_downloaded", 0),
+        "uploaded": _live_state.get("download_station_uploaded", 0),
+        "failed": _live_state.get("download_station_failed", 0),
+        "skipped": _live_state.get("download_station_skipped", 0),
+        "bytes_done": _live_state.get("download_station_bytes_done", 0),
+        "bytes_total": _live_state.get("download_station_bytes_total", 0),
+        "speed_mbps": _live_state.get("download_station_speed_mbps"),
+        "dest_dir": _live_state.get("download_station_dest_dir", get_download_dest_dir()),
+        "error": _live_state.get("download_station_error"),
+    }
+
+@app.get("/api/download_station/runs")
+def api_download_station_runs():
+    db = SessionLocal()
+    runs = db.query(DownloadStationRun).order_by(DownloadStationRun.id.desc()).all()
+    result = [
+        {
+            "id": r.id,
+            "source_url": r.source_url,
+            "start_time": r.start_time,
+            "end_time": r.end_time,
+            "overall_status": r.overall_status,
+            "total_files": r.total_files,
+            "downloaded_files": r.downloaded_files,
+            "uploaded_files": r.uploaded_files,
+            "failed_files": r.failed_files,
+            "skipped_files": r.skipped_files,
+            "downloaded_bytes": r.downloaded_bytes,
+            "uploaded_bytes": r.uploaded_bytes,
+        }
+        for r in runs
+    ]
+    db.close()
+    return result
+
+@app.get("/api/download_station/runs/{run_id}/files")
+def api_download_station_run_files(run_id: int, status: Optional[str] = None, limit: int = 200, offset: int = 0):
+    db = SessionLocal()
+    q = db.query(DownloadStationFile).filter(DownloadStationFile.run_id == run_id)
+    if status:
+        q = q.filter((DownloadStationFile.download_status == status) | (DownloadStationFile.upload_status == status))
+    files = q.order_by(DownloadStationFile.id).offset(offset).limit(limit).all()
+    result = [
+        {
+            "id": f.id,
+            "filename": f.filename,
+            "filepath": f.filepath,
+            "source_url": f.source_url,
+            "filesize": f.filesize,
+            "download_status": f.download_status,
+            "upload_status": f.upload_status,
+            "error_message": f.error_message,
+            "download_duration": f.download_duration,
+            "upload_duration": f.upload_duration,
+        }
+        for f in files
+    ]
+    db.close()
+    return result
+
+@app.get("/api/download_station/live_files")
+def api_download_station_live_files(limit: int = 150):
+    db = SessionLocal()
+    run = None
+    if _live_state.get("download_station_run_id"):
+        run = db.query(DownloadStationRun).filter(DownloadStationRun.id == _live_state["download_station_run_id"]).first()
+    if not run:
+        run = db.query(DownloadStationRun).order_by(DownloadStationRun.id.desc()).first()
+    if not run:
+        db.close()
+        return {"run_id": None, "files": []}
+
+    files = db.query(DownloadStationFile).filter(
+        DownloadStationFile.run_id == run.id
+    ).order_by(DownloadStationFile.id.desc()).limit(limit).all()
+
+    result = [
+        {
+            "id": f.id,
+            "filename": f.filename,
+            "source_url": f.source_url,
+            "filesize": f.filesize,
+            "download_status": f.download_status,
+            "upload_status": f.upload_status,
+            "error_message": f.error_message,
+            "download_duration": f.download_duration,
+            "upload_duration": f.upload_duration,
+        }
+        for f in files
+    ]
+    db.close()
+    return {
+        "run_id": run.id,
+        "run_status": run.overall_status,
+        "total_files": run.total_files,
+        "downloaded_files": run.downloaded_files,
+        "uploaded_files": run.uploaded_files,
+        "failed_files": run.failed_files,
+        "dest_dir": get_download_dest_dir(),
+        "files": result
+    }
+
+@app.post("/api/download_station/runs/{run_id}/retry")
+async def api_download_station_retry(run_id: int, background_tasks: BackgroundTasks):
+    if _live_state.get("download_station_phase") in ("downloading", "uploading"):
+        return {"status": "already_running"}
+    db = SessionLocal()
+    failed = db.query(DownloadStationFile).filter(
+        DownloadStationFile.run_id == run_id,
+        (DownloadStationFile.download_status == "failed") | (DownloadStationFile.upload_status == "failed")
+    ).all()
+    items = []
+    for f in failed:
+        if f.source_url:
+            items.append({
+                "url": f.source_url,
+                "filename": f.filename
+            })
+    db.close()
+    if not items:
+        return {"status": "no_retryable_files", "message": "No failed files to retry."}
+    background_tasks.add_task(process_download_station_queue, items, f"retry_run_{run_id}", run_id)
+    return {"status": "started", "count": len(items)}
+
+@app.get("/api/download_station/browser/proxy")
+async def api_download_station_browser_proxy(url: str, request: Request):
+    """
+    Proxies web pages and media assets for the in-page embedded browser,
+    stripping restrictive iframe headers (X-Frame-Options, CSP) and providing CORS.
+    """
+    if not url:
+        return Response(content="No URL provided", status_code=400)
+    
+    headers_dict = dict(request.headers)
+    content, status_code, out_headers = fetch_proxied_web_resource(url, headers_dict)
+    
+    response_headers = {}
+    for k, v in out_headers.items():
+        k_lower = k.lower()
+        if k_lower in ("content-type", "access-control-allow-origin", "last-modified", "etag", "cache-control"):
+            response_headers[k] = v
+            
+    return Response(
+        content=content,
+        status_code=status_code,
+        headers=response_headers,
+        media_type=response_headers.get("Content-Type", "text/html")
+    )
+
+@app.post("/api/download_station/browser/navigate")
+def api_download_station_browser_navigate(body: dict = Body(...)):
+    url = body.get("url", "").strip()
+    if not url:
+        return {"status": "error", "message": "No URL provided"}
+    return browser_navigate_url(url)
+
+@app.post("/api/download_station/browser/restart")
+def api_download_station_browser_restart():
+    return browser_restart_service()
+
+@app.get("/api/download_station/browser/status")
+def api_download_station_browser_status():
+    return browser_get_status()
+
+# ---------------------------------------------------------------------------
 # System Controls
 # ---------------------------------------------------------------------------
 
@@ -943,6 +1201,78 @@ def _update_state(event_type: str, data: dict):
         s["upload_station_skipped"] = data.get("skipped_files", s["upload_station_skipped"])
         if data.get("error"):
             s["upload_station_error"] = data["error"]
+    # --- Download Station events ---
+    elif event_type == "download_station_run_started":
+        s["download_station_phase"] = "downloading"
+        s["download_station_subphase"] = "downloading"
+        s["download_station_run_id"] = data.get("run_id")
+        s["download_station_total"] = data.get("total_files", 0)
+        s["download_station_current"] = 0
+        s["download_station_downloaded"] = 0
+        s["download_station_uploaded"] = 0
+        s["download_station_failed"] = 0
+        s["download_station_skipped"] = 0
+        s["download_station_bytes_done"] = 0
+        s["download_station_bytes_total"] = 0
+        s["download_station_current_file"] = None
+        s["download_station_speed_mbps"] = None
+        s["download_station_dest_dir"] = data.get("dest_dir", s["download_station_dest_dir"])
+        s["download_station_error"] = None
+    elif event_type == "download_station_file_start":
+        s["download_station_phase"] = "downloading"
+        s["download_station_subphase"] = "downloading"
+        s["download_station_current_file"] = data.get("filename")
+        s["download_station_current"] = data.get("current", 0)
+        s["download_station_total"] = data.get("total", s["download_station_total"])
+    elif event_type == "download_station_download_progress":
+        s["download_station_phase"] = "downloading"
+        s["download_station_subphase"] = "downloading"
+        s["download_station_current_file"] = data.get("filename")
+        s["download_station_current"] = data.get("current", 0)
+        s["download_station_bytes_done"] = data.get("bytes_downloaded", 0)
+        s["download_station_bytes_total"] = data.get("total_bytes", s["download_station_bytes_total"])
+    elif event_type == "download_station_download_done":
+        s["download_station_downloaded"] = s.get("download_station_downloaded", 0) + 1
+    elif event_type == "download_station_upload_start":
+        s["download_station_phase"] = "uploading"
+        s["download_station_subphase"] = "uploading"
+        s["download_station_current_file"] = data.get("filename")
+        s["download_station_current"] = data.get("current", 0)
+    elif event_type == "download_station_upload_progress":
+        s["download_station_phase"] = "uploading"
+        s["download_station_subphase"] = "uploading"
+        s["download_station_current_file"] = data.get("filename")
+        s["download_station_current"] = data.get("current", 0)
+        s["download_station_uploaded"] = data.get("uploaded_files", s["download_station_uploaded"])
+        s["download_station_failed"] = data.get("failed_files", s["download_station_failed"])
+    elif event_type == "download_station_speed":
+        s["download_station_speed_mbps"] = data.get("speed_mbps")
+        if data.get("phase"):
+            s["download_station_subphase"] = data.get("phase")
+    elif event_type == "download_station_file_done":
+        s["download_station_current_file"] = None
+        if data.get("status") in ("success", "duplicate"):
+            s["download_station_uploaded"] = s.get("download_station_uploaded", 0) + 1
+        elif data.get("status") == "skipped":
+            s["download_station_skipped"] = s.get("download_station_skipped", 0) + 1
+    elif event_type == "download_station_file_failed":
+        s["download_station_current_file"] = None
+        s["download_station_failed"] = s.get("download_station_failed", 0) + 1
+    elif event_type == "download_station_stopped":
+        s["download_station_phase"] = "stopped"
+        s["download_station_current_file"] = None
+        s["download_station_speed_mbps"] = None
+    elif event_type == "download_station_completed":
+        status_val = data.get("status", "completed")
+        s["download_station_phase"] = "completed" if status_val in ("completed", "partial_failure") else "failed"
+        s["download_station_current_file"] = None
+        s["download_station_speed_mbps"] = None
+        s["download_station_downloaded"] = data.get("downloaded_files", s["download_station_downloaded"])
+        s["download_station_uploaded"] = data.get("uploaded_files", s["download_station_uploaded"])
+        s["download_station_failed"] = data.get("failed_files", s["download_station_failed"])
+        s["download_station_skipped"] = data.get("skipped_files", s["download_station_skipped"])
+        if data.get("error"):
+            s["download_station_error"] = data["error"]
 
 async def broadcast_event(event_type: str, data: dict):
     _update_state(event_type, data)

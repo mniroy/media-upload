@@ -112,9 +112,22 @@ sqlite3 /var/lib/media_upload/data.db \
 
 ### 6. Use the Ext Drive tab
 
-- Click **Ext Drive** in the sidebar.
+- Click **Drive Station** in the sidebar.
 - The drive status card shows mount status and disk usage.
 - Click **▶ Upload to Google Photos** to start scanning and uploading all media on the drive.
 - Files already uploaded in previous sessions are automatically skipped (tracked in `ext_drive_files` DB table).
 - Use **⏸ Pause / ▶ Resume / ✕ Stop** to control the upload independently from USB operations.
+
+---
+
+## Download Station (In-Page Browser & Web Download Hub)
+
+The **Download Station** allows you to browse the web, cloud storage (Google Drive, iCloud, OneDrive, Dropbox, WeTransfer), or paste direct links to download media directly to the External Drive (`/mnt/external_drive/Downloads`). Once a download is complete, it is **automatically uploaded to Google Photos**.
+
+- **In-Page Embedded Browser**: Built-in browser with address bar, back/forward, bookmarks, and full-screen toggle.
+- **Save directly to External Drive**: Files are written straight to `/mnt/external_drive/Downloads` (or configured drive path).
+- **Auto-Upload to Google Photos**: Streams downloaded media to Google Photos as soon as download completes with cross-station duplicate prevention.
+- **Live Dual-Telemetry**: Live percent hero, download speed, upload speed, and active file progress.
+- **Persistent SQLite Audit History**: Detailed logs of every downloaded & uploaded file with retry controls.
+
 
