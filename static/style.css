@@ -1816,7 +1816,7 @@ select.form-input { cursor: pointer; }
 }
 
 /* =============================================================
-   DOWNLOAD STATION & IN-PAGE BROWSER STYLES
+   DOWNLOAD STATION & IN-PAGE BROWSER (VNC) STYLES
    ============================================================= */
 
 .station-icon-download {
@@ -1825,6 +1825,7 @@ select.form-input { cursor: pointer; }
     border: 1px solid var(--download-mid);
 }
 
+.vnc-station-card,
 .browser-station-card {
     padding: 0 !important;
     overflow: hidden;
@@ -1836,261 +1837,22 @@ select.form-input { cursor: pointer; }
     border-radius: var(--radius);
 }
 
-.browser-window-header {
-    background: var(--surface2);
-    border-bottom: 1px solid var(--border);
-    padding: 8px 12px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    user-select: none;
-}
-
-.browser-window-dots {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.browser-dot {
-    width: 11px;
-    height: 11px;
-    border-radius: 50%;
-    display: inline-block;
-}
-
-.dot-red    { background: #ff5f56; border: 1px solid #e0443e; }
-.dot-yellow { background: #ffbd2e; border: 1px solid #dea123; }
-.dot-green  { background: #27c93f; border: 1px solid #1aab29; }
-
-.browser-window-tabs {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    overflow: hidden;
-}
-
-.browser-tab {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-bottom: none;
-    padding: 5px 12px;
-    border-radius: 6px 6px 0 0;
-    font-size: 11.5px;
-    font-weight: 600;
-    color: var(--text);
-    max-width: 220px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.browser-window-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-/* Browser Navigation Toolbar */
-.browser-toolbar {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 8px 12px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.browser-nav-btn-group {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.browser-nav-btn {
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-sm);
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text-sub);
-    cursor: pointer;
-    transition: all var(--transition);
-}
-
-.browser-nav-btn:hover {
-    background: var(--border);
-    color: var(--text);
-}
-
-.browser-address-wrap {
-    flex: 1;
-    min-width: 240px;
-    position: relative;
-    display: flex;
-    align-items: center;
-}
-
-.browser-address-icon {
-    position: absolute;
-    left: 10px;
-    color: var(--text-faint);
-    display: flex;
-    align-items: center;
-    pointer-events: none;
-}
-
-.browser-address-input {
-    width: 100%;
-    height: 32px;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 0 44px 0 32px;
-    font-family: inherit;
-    font-size: 12px;
-    color: var(--text);
-    outline: none;
-    transition: all var(--transition);
-}
-
-.browser-address-input:focus {
-    background: var(--surface);
-    border-color: var(--download);
-    box-shadow: 0 0 0 2px var(--download-mid);
-}
-
-.browser-go-btn {
-    position: absolute;
-    right: 4px;
-    height: 24px;
-    padding: 0 8px;
-    border-radius: 4px;
-    background: var(--download);
-    color: #fff;
-    border: none;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all var(--transition);
-}
-
-.browser-go-btn:hover {
-    filter: brightness(1.1);
-}
-
-.browser-action-group {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.btn-download-action {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--radius-sm);
-    background: var(--download);
-    color: #fff;
-    border: none;
-    font-size: 11.5px;
-    font-weight: 600;
-    cursor: pointer;
-    box-shadow: 0 2px 6px rgba(8, 145, 178, 0.25);
-    transition: all var(--transition);
-}
-
-.btn-download-action:hover {
-    filter: brightness(1.1);
-    transform: translateY(-1px);
-}
-
-/* Bookmarks Quick-Bar */
-.browser-bookmarks-bar {
-    background: var(--surface2);
-    border-bottom: 1px solid var(--border);
-    padding: 6px 12px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    overflow-x: auto;
-    scrollbar-width: none;
-}
-
-.browser-bookmarks-bar::-webkit-scrollbar {
-    display: none;
-}
-
-.bookmarks-label {
-    font-size: 10.5px;
-    font-weight: 600;
-    color: var(--text-faint);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    white-space: nowrap;
-}
-
-.bookmarks-pills {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.bookmark-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 3px 9px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-sub);
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all var(--transition);
-}
-
-.bookmark-pill:hover {
-    background: var(--download-soft);
-    border-color: var(--download-mid);
-    color: var(--download);
-}
-
-.bm-icon {
-    font-size: 11px;
-}
-
-/* Viewport Container & Home Screen */
+/* Viewport Container */
 .browser-viewport-container {
     position: relative;
     width: 100%;
-    min-height: 480px;
-    height: 560px;
-    max-height: 75vh;
-    background: #ffffff;
+    min-height: 540px;
+    height: 640px;
+    background: #0f172a;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
     transition: height 0.3s ease;
 }
 
 .browser-viewport-expanded {
-    height: 82vh !important;
-    max-height: 85vh !important;
+    height: 85vh !important;
+    max-height: 90vh !important;
 }
 
 .browser-iframe {
@@ -2098,64 +1860,8 @@ select.form-input { cursor: pointer; }
     height: 100%;
     flex: 1;
     border: none;
-    background: #ffffff;
-}
-
-.browser-home-overlay {
-    width: 100%;
-    height: 100%;
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 32px 20px;
-    background: radial-gradient(circle at 50% 30%, var(--download-soft) 0%, var(--surface2) 100%);
-    overflow-y: auto;
-}
-
-.browser-home-hero {
-    max-width: 640px;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: 14px;
-}
-
-.browser-home-icon {
-    width: 68px;
-    height: 68px;
-    border-radius: 18px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--download);
-}
-
-.browser-home-title {
-    font-size: 21px;
-    font-weight: 700;
-    color: var(--text);
-    letter-spacing: -0.4px;
-}
-
-.browser-home-desc {
-    font-size: 13px;
-    color: var(--text-sub);
-    line-height: 1.5;
-}
-
-.browser-home-desc code {
-    background: var(--surface);
-    padding: 2px 6px;
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    font-size: 11.5px;
-    color: var(--download);
+    background: #0f172a;
+    display: block;
 }
 
 .direct-download-box {

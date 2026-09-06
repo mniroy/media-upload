@@ -1,9 +1,9 @@
-const CACHE_NAME = 'media-hub-v1';
+const CACHE_NAME = 'media-hub-v2';
 const PRECACHE_ASSETS = [
   '/',
   '/static/index.html',
-  '/static/style.css?v=16',
-  '/static/app.js?v=16',
+  '/static/style.css?v=18',
+  '/static/app.js?v=18',
   '/static/manifest.json',
   '/manifest.json',
   '/static/favicon.ico',

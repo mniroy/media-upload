@@ -109,8 +109,12 @@ def browser_navigate_url(target_url: str) -> dict:
             "sudo", "-u", "mniroy", "env", "DISPLAY=:99",
             "google-chrome",
             "--no-sandbox",
+            "--test-type",
             "--disable-dev-shm-usage",
             "--disable-gpu",
+            "--start-maximized",
+            "--no-first-run",
+            "--no-default-browser-check",
             "--user-data-dir=/var/lib/media_upload/chrome_profile",
             url
         ]

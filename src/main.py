@@ -1,5 +1,6 @@
 import os
 import time
+import asyncio
 import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, BackgroundTasks, File, UploadFile, Form, Request, Response, Body
@@ -216,6 +217,11 @@ def service_worker():
     return FileResponse("static/sw.js", media_type="application/javascript", headers={"Service-Worker-Allowed": "/"})
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# NOTE: /novnc static files mount is intentionally registered AFTER all websocket routes
+# at the bottom of this file. This ensures Starlette's route matcher sees the explicit
+# @app.websocket("/novnc/websockify") route before the StaticFiles sub-app intercepts it.
+NOVNC_DIR = "/usr/share/novnc"
 
 # ---------------------------------------------------------------------------
 # Pydantic models
@@ -1058,6 +1064,65 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         if websocket in active_websockets:
             active_websockets.remove(websocket)
+
+@app.websocket("/websockify")
+@app.websocket("/novnc/websockify")
+async def websocket_vnc_proxy(websocket: WebSocket):
+    """
+    Direct WebSocket-to-TCP proxy for VNC (port 5900).
+    Enables noVNC to work seamlessly over same-origin HTTP/HTTPS and Cloudflare Tunnels
+    without requiring separate external ports or dealing with mixed-content blocks.
+    """
+    subprotocols = websocket.scope.get("subprotocols", [])
+    selected_subprotocol = "binary" if "binary" in subprotocols else (subprotocols[0] if subprotocols else None)
+    await websocket.accept(subprotocol=selected_subprotocol)
+
+    try:
+        reader, writer = await asyncio.open_connection("127.0.0.1", 5900)
+    except Exception as e:
+        print(f"[vnc_proxy] Failed to connect to local VNC server 127.0.0.1:5900: {e}")
+        await websocket.close()
+        return
+
+    async def ws_to_tcp():
+        try:
+            while True:
+                data = await websocket.receive_bytes()
+                writer.write(data)
+                await writer.drain()
+        except Exception:
+            pass
+        finally:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+
+    async def tcp_to_ws():
+        try:
+            while True:
+                data = await reader.read(65536)
+                if not data:
+                    break
+                await websocket.send_bytes(data)
+        except Exception:
+            pass
+        finally:
+            try:
+                await websocket.close()
+            except Exception:
+                pass
+
+    await asyncio.gather(ws_to_tcp(), tcp_to_ws())
+
+# ---------------------------------------------------------------------------
+# Mount noVNC AFTER all websocket routes so that Starlette's route matcher
+# evaluates @app.websocket("/novnc/websockify") before the StaticFiles mount.
+# StaticFiles asserts scope["type"]=="http" and would crash on WS upgrades.
+# ---------------------------------------------------------------------------
+if os.path.exists(NOVNC_DIR):
+    app.mount("/novnc", StaticFiles(directory=NOVNC_DIR, html=True), name="novnc")
 
 def _update_state(event_type: str, data: dict):
     """Keep _live_state in sync with broadcast events."""

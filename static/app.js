@@ -171,7 +171,8 @@ function switchTab(tab) {
 let _wsConnected = false;
 
 function connectWebSocket() {
-    const ws = new WebSocket(`ws://${location.host}/ws`);
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${wsProto}//${location.host}/ws`);
     ws.onopen = () => { _wsConnected = true; };
     ws.onmessage = handleWsMessage;
     ws.onclose = () => { _wsConnected = false; setTimeout(connectWebSocket, 3000); };
@@ -2247,24 +2248,14 @@ let browserVncInitialized = false;
 
 function initDownloadStationBrowser(targetUrl = 'https://drive.google.com') {
     const iframe = document.getElementById('browser-iframe');
-    const overlay = document.getElementById('browser-home-overlay');
-    const addressInput = document.getElementById('browser-address-input');
-
-    if (addressInput && !addressInput.value) {
-        addressInput.value = targetUrl;
-    }
-
-    const vncUrl = `http://${window.location.hostname}:6080/vnc.html?autoconnect=true&resize=remote&reconnect=true&show_dot=true`;
+    const vncUrl = `/novnc/vnc.html?autoconnect=true&resize=scale&reconnect=true&show_dot=true&path=websockify`;
 
     if (iframe) {
-        if (!iframe.src || !iframe.src.includes(':6080')) {
+        if (!iframe.src || !iframe.src.includes('/novnc/')) {
             iframe.src = vncUrl;
             browserVncInitialized = true;
         }
         iframe.classList.remove('hidden');
-    }
-    if (overlay) {
-        overlay.classList.add('hidden');
     }
 }
 
@@ -2280,17 +2271,6 @@ async function browserNavigateTo(url) {
     }
 
     currentBrowserUrl = url;
-    const addressInput = document.getElementById('browser-address-input');
-    if (addressInput) addressInput.value = url;
-
-    const tabTitle = document.getElementById('browser-tab-title');
-    try {
-        const domain = new URL(url).hostname;
-        if (tabTitle) tabTitle.textContent = domain;
-    } catch (e) {
-        if (tabTitle) tabTitle.textContent = url;
-    }
-
     initDownloadStationBrowser(url);
 
     try {
@@ -2304,25 +2284,10 @@ async function browserNavigateTo(url) {
     }
 }
 
-function browserNavigateFromInput() {
-    const input = document.getElementById('browser-address-input');
-    if (input && input.value) {
-        browserNavigateTo(input.value);
-    }
-}
-
-function browserGoBack() {
-    browserNavigateTo(currentBrowserUrl);
-}
-
-function browserGoForward() {
-    browserNavigateTo(currentBrowserUrl);
-}
-
 function browserReload() {
     const iframe = document.getElementById('browser-iframe');
     if (iframe) {
-        const vncUrl = `http://${window.location.hostname}:6080/vnc.html?autoconnect=true&resize=remote&reconnect=true&show_dot=true`;
+        const vncUrl = `/novnc/vnc.html?autoconnect=true&resize=scale&reconnect=true&show_dot=true&path=websockify`;
         iframe.src = vncUrl + `&_t=${Date.now()}`;
     }
 }
@@ -2341,19 +2306,6 @@ async function browserRestartService() {
     }
 }
 
-function browserGoHome() {
-    browserNavigateTo('https://drive.google.com');
-}
-
-function openCurrentUrlInNewTab() {
-    const url = currentBrowserUrl || (document.getElementById('browser-address-input') ? document.getElementById('browser-address-input').value : '');
-    if (url) {
-        window.open(url, '_blank');
-    } else {
-        showToast('Please enter a web URL first', 'ℹ️');
-    }
-}
-
 function toggleBrowserFullscreen() {
     const container = document.getElementById('browser-viewport-container');
     if (container) {
@@ -2361,19 +2313,18 @@ function toggleBrowserFullscreen() {
     }
 }
 
-function triggerDownloadFromAddressBar() {
-    const url = currentBrowserUrl || (document.getElementById('browser-address-input') ? document.getElementById('browser-address-input').value : '');
-    if (!url) {
-        showToast('Please enter a URL to download', '⚠️');
-        return;
-    }
-    startDownloadStationPipeline([url]);
+function submitDirectDownloadModal() {
+    const rawVal = prompt('Enter Google Drive link, photo/video URL, or direct media download link:');
+    if (!rawVal || !rawVal.trim()) return;
+    const urls = rawVal.trim().split(/[\n,]+/).map(u => u.trim()).filter(u => u.length > 0);
+    if (urls.length === 0) return;
+    startDownloadStationPipeline(urls);
 }
 
 function submitDirectDownload() {
     const input = document.getElementById('direct-dl-url');
     if (!input || !input.value.trim()) {
-        showToast('Please paste a media URL or Google Drive link', '⚠️');
+        submitDirectDownloadModal();
         return;
     }
     const rawVal = input.value.trim();
