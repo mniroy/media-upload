@@ -172,6 +172,17 @@
                     </div>
                     <div class="nav-label"><span class="nav-title">File Explorer</span></div>
                 </a>
+                <a href="#smb" onclick="switchTab('settings'); setTimeout(() => document.getElementById('settings-smb-card')?.scrollIntoView({behavior: 'smooth'}), 100); return false;" class="nav-item">
+                    <div class="nav-icon" style="color: #38bdf8;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+                            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+                            <line x1="6" y1="6" x2="6.01" y2="6"/>
+                            <line x1="6" y1="18" x2="6.01" y2="18"/>
+                        </svg>
+                    </div>
+                    <div class="nav-label"><span class="nav-title">SMB File Sharing</span></div>
+                </a>
                 <a id="tab-history" class="nav-item" data-tab="history">
                     <div class="nav-icon">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -452,7 +463,13 @@
 
                         <!-- Drive stats bar -->
                         <div class="drive-stats-bar">
-                            <div id="ext-mount-point" class="drive-mount-point">/mnt/external_drive</div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                                <div id="ext-mount-point" class="drive-mount-point">/mnt/external_drive</div>
+                                <span id="ext-smb-pill" class="smb-quick-pill" onclick="copySmbShare('External')" title="Click to copy SMB Network URL">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                                    <span id="ext-smb-pill-text">smb://.../External</span>
+                                </span>
+                            </div>
                             <div class="drive-stats-grid">
                                 <div class="drive-stat">
                                     <span class="stat-label-sm">Total</span>
@@ -1033,6 +1050,103 @@
                             </button>
                         </div>
                     </div>
+                    <div class="settings-card" id="settings-smb-card">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                            <div>
+                                <h3 class="settings-section-title" style="margin-bottom: 2px;">SMB Network File Sharing</h3>
+                                <p class="settings-hint">Access both Internal Storage and External HDD from your Mac, Windows PC, or Mobile Phone over Wi-Fi/LAN.</p>
+                            </div>
+                            <span id="smb-status-badge" class="badge badge-gray">Checking...</span>
+                        </div>
+
+                        <!-- Shares List -->
+                        <div class="smb-shares-list">
+                            <!-- Internal Share Card -->
+                            <div class="smb-share-item">
+                                <div class="smb-share-header">
+                                    <div class="smb-share-title-wrap">
+                                        <div class="smb-icon-box smb-icon-internal">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                                        </div>
+                                        <div>
+                                            <span class="smb-share-name">Internal Storage</span>
+                                            <span class="smb-share-path">/var/lib/media_upload</span>
+                                        </div>
+                                    </div>
+                                    <span class="badge-subtle badge-green" id="smb-internal-avail">Ready</span>
+                                </div>
+                                <div class="smb-url-grid">
+                                    <div class="smb-url-row">
+                                        <span class="smb-url-label">🍎 Mac / iOS</span>
+                                        <code id="smb-mac-url-internal" class="smb-url-code">smb://.../Internal</code>
+                                        <button type="button" class="btn-copy-smb" onclick="copySmbText('smb-mac-url-internal', 'Mac Internal URL')" title="Copy macOS URL">Copy</button>
+                                    </div>
+                                    <div class="smb-url-row">
+                                        <span class="smb-url-label">🪟 Windows</span>
+                                        <code id="smb-win-url-internal" class="smb-url-code">\\...\Internal</code>
+                                        <button type="button" class="btn-copy-smb" onclick="copySmbText('smb-win-url-internal', 'Windows Internal URL')" title="Copy Windows URL">Copy</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- External Share Card -->
+                            <div class="smb-share-item">
+                                <div class="smb-share-header">
+                                    <div class="smb-share-title-wrap">
+                                        <div class="smb-icon-box smb-icon-external">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                                        </div>
+                                        <div>
+                                            <span class="smb-share-name">External HDD</span>
+                                            <span class="smb-share-path" id="smb-ext-path">/mnt/external_drive</span>
+                                        </div>
+                                    </div>
+                                    <span class="badge-subtle badge-green" id="smb-external-avail">Ready</span>
+                                </div>
+                                <div class="smb-url-grid">
+                                    <div class="smb-url-row">
+                                        <span class="smb-url-label">🍎 Mac / iOS</span>
+                                        <code id="smb-mac-url-external" class="smb-url-code">smb://.../External</code>
+                                        <button type="button" class="btn-copy-smb" onclick="copySmbText('smb-mac-url-external', 'Mac External URL')" title="Copy macOS URL">Copy</button>
+                                    </div>
+                                    <div class="smb-url-row">
+                                        <span class="smb-url-label">🪟 Windows</span>
+                                        <code id="smb-win-url-external" class="smb-url-code">\\...\External</code>
+                                        <button type="button" class="btn-copy-smb" onclick="copySmbText('smb-win-url-external', 'Windows External URL')" title="Copy Windows URL">Copy</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Connection Instructions Accordion -->
+                        <details class="smb-guide-details">
+                            <summary class="smb-guide-summary">📖 How to connect from Mac, Windows, iPhone, or Android</summary>
+                            <div class="smb-guide-content">
+                                <div class="smb-guide-step">
+                                    <strong>🍏 macOS:</strong> In Finder, press <kbd>Cmd</kbd> + <kbd>K</kbd> (or menu <em>Go &rarr; Connect to Server</em>), paste <code id="guide-mac-url">smb://...</code> &rarr; click <strong>Connect</strong> &rarr; Choose <strong>Guest</strong> (or your Linux user).
+                                </div>
+                                <div class="smb-guide-step">
+                                    <strong>🪟 Windows PC:</strong> Press <kbd>Win</kbd> + <kbd>R</kbd>, paste <code id="guide-win-url">\\...</code> &rarr; press Enter. You can also right-click "This PC" &rarr; <em>Map network drive</em>.
+                                </div>
+                                <div class="smb-guide-step">
+                                    <strong>📱 iPhone / iPad:</strong> Open built-in <strong>Files</strong> app &rarr; tap the <kbd>...</kbd> menu button in top right &rarr; tap <strong>Connect to Server</strong> &rarr; enter server IP &rarr; tap <strong>Connect</strong> as Guest.
+                                </div>
+                                <div class="smb-guide-step">
+                                    <strong>🤖 Android:</strong> Use <strong>VLC</strong>, <strong>CX File Explorer</strong>, or <strong>Solid Explorer</strong> &rarr; Add Local / SMB Network Storage &rarr; Enter server IP.
+                                </div>
+                            </div>
+                        </details>
+
+                        <!-- Actions -->
+                        <div class="smb-actions-row">
+                            <button type="button" onclick="restartSmbService()" class="btn btn-secondary" style="font-size:12px;padding:6px 12px;display:inline-flex;align-items:center;gap:6px;">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                                Restart SMB Service
+                            </button>
+                            <button type="button" onclick="fetchSmbStatus()" class="refresh-link" style="margin:0;">&#8635; Refresh Status</button>
+                        </div>
+                    </div>
+
                     <div class="settings-card">
                         <h3 class="settings-section-title">Install App (PWA)</h3>
                         <p class="settings-hint">Install Media Hub on your Mac (Chrome/Safari/Edge) or Mobile Phone (iPhone/Android) for instant standalone access.</p>

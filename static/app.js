@@ -71,6 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchStorage();
     fetchNetworkSpeed();
     fetchSettings();
+    fetchSmbStatus();
     fetchExtDriveStatus();   // populate sidebar ext storage on load
     initUploadStationDragAndDrop();
     switchTab('upload');
@@ -155,7 +156,8 @@ function switchTab(tab) {
 
     // Lazy load
     if (tab === 'history') fetchHistory();
-    if (tab === 'extdrive') { fetchExtDriveStatus(); fetchExtDriveHistory(); fetchExtLiveFiles(); }
+    if (tab === 'settings') { fetchSettings(); fetchSmbStatus(); }
+    if (tab === 'extdrive') { fetchExtDriveStatus(); fetchExtDriveHistory(); fetchExtLiveFiles(); fetchSmbStatus(); }
     if (tab === 'upload') { fetchUploadStationStatus(); fetchUploadStationLiveFiles(); fetchUploadStationHistory(); }
     if (tab === 'download') {
         initDownloadStationBrowser();
@@ -735,6 +737,122 @@ async function saveSettings() {
         if (res.ok) showToast('Settings saved ✓', '✓');
         else showToast('Failed to save settings.', '✕');
     } catch (e) { showToast('Error saving settings.', '✕'); }
+}
+
+// ---------------------------------------------------------------------------
+// SMB Network File Sharing
+// ---------------------------------------------------------------------------
+let _smbStatusData = null;
+
+async function fetchSmbStatus() {
+    try {
+        const res = await fetch('/api/smb/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        _smbStatusData = data;
+
+        const badge = document.getElementById('smb-status-badge');
+        if (badge) {
+            if (data.running) {
+                badge.className = 'badge badge-green';
+                badge.textContent = `● Running (${data.lan_ip}:445)`;
+            } else if (data.installed) {
+                badge.className = 'badge badge-yellow';
+                badge.textContent = '● Stopped';
+            } else {
+                badge.className = 'badge badge-red';
+                badge.textContent = 'Not Installed';
+            }
+        }
+
+        const internalShare = (data.shares || []).find(s => s.name === 'Internal');
+        const externalShare = (data.shares || []).find(s => s.name === 'External');
+
+        if (internalShare) {
+            setText('smb-mac-url-internal', internalShare.mac_url);
+            setText('smb-win-url-internal', internalShare.win_url);
+            const internalAvail = document.getElementById('smb-internal-avail');
+            if (internalAvail) {
+                internalAvail.className = internalShare.available ? 'badge-subtle badge-green' : 'badge-subtle badge-gray';
+                internalAvail.textContent = internalShare.available ? 'Ready' : 'Not Found';
+            }
+        }
+
+        if (externalShare) {
+            setText('smb-mac-url-external', externalShare.mac_url);
+            setText('smb-win-url-external', externalShare.win_url);
+            setText('smb-ext-path', externalShare.path);
+            const externalAvail = document.getElementById('smb-external-avail');
+            if (externalAvail) {
+                externalAvail.className = externalShare.available ? 'badge-subtle badge-green' : 'badge-subtle badge-yellow';
+                externalAvail.textContent = externalShare.available ? 'Ready' : 'Not Mounted';
+            }
+            // Update quick pill on Drive Station
+            setText('ext-smb-pill-text', externalShare.mac_url);
+        }
+
+        if (data.summary) {
+            setText('guide-mac-url', `${data.summary.mac_root}/External`);
+            setText('guide-win-url', `${data.summary.win_root}\\External`);
+        }
+    } catch (e) {
+        console.error('Failed to load SMB status', e);
+    }
+}
+
+async function copySmbText(elementIdOrText, label = 'SMB URL') {
+    let textToCopy = elementIdOrText;
+    const el = document.getElementById(elementIdOrText);
+    if (el) {
+        textToCopy = el.textContent || el.innerText || '';
+    }
+    if (!textToCopy) return;
+
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(textToCopy);
+        } else {
+            const tempInput = document.createElement('input');
+            tempInput.value = textToCopy;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+        }
+        showToast(`Copied ${label} to clipboard ✓`, '📋');
+    } catch (err) {
+        showToast('Failed to copy to clipboard', '✕');
+    }
+}
+
+function copySmbShare(shareName) {
+    if (!_smbStatusData) {
+        copySmbText(`smb://${window.location.hostname}/${shareName}`, `${shareName} Share`);
+        return;
+    }
+    const share = (_smbStatusData.shares || []).find(s => s.name.toLowerCase() === shareName.toLowerCase());
+    if (share) {
+        copySmbText(share.mac_url, `${share.name} Share`);
+    } else {
+        copySmbText(`smb://${_smbStatusData.lan_ip}/${shareName}`, `${shareName} Share`);
+    }
+}
+
+async function restartSmbService() {
+    if (!confirm('Restart Samba (SMB) file sharing daemon?')) return;
+    try {
+        showToast('Restarting SMB service…', '⏳');
+        const res = await fetch('/api/smb/restart', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message || 'SMB restarted ✓', '✓');
+            setTimeout(fetchSmbStatus, 1500);
+        } else {
+            showToast(data.message || 'Failed to restart SMB.', '✕');
+        }
+    } catch (e) {
+        showToast('Error restarting SMB service.', '✕');
+    }
 }
 
 // ---------------------------------------------------------------------------

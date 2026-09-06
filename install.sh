@@ -41,4 +41,37 @@ sudo cp /tmp/filebrowser.service /etc/systemd/system/filebrowser.service
 sudo systemctl daemon-reload
 sudo systemctl enable filebrowser.service
 
+# Setup Samba (SMB) network file sharing for Internal & External drives
+echo "Setting up Samba (SMB) Network File Sharing..."
+if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update -y || true
+    sudo apt-get install -y samba smbclient wsdd || sudo apt-get install -y samba smbclient || true
+fi
+
+# Ensure mount paths and permissions
+sudo mkdir -p /mnt/external_drive
+sudo chown -R $USER:$USER /mnt/external_drive 2>/dev/null || true
+sudo chmod -R 0775 /var/lib/media_upload 2>/dev/null || true
+
+# Configure smb.conf
+if [ -f /etc/samba/smb.conf ] && [ ! -f /etc/samba/smb.conf.backup ]; then
+    sudo cp /etc/samba/smb.conf /etc/samba/smb.conf.backup
+fi
+
+sed "s|USER_NAME|$USER|g" smb.conf.template > /tmp/smb.conf
+sudo cp /tmp/smb.conf /etc/samba/smb.conf
+
+# Restart and enable Samba services
+sudo systemctl restart smbd 2>/dev/null || sudo service smbd restart 2>/dev/null || true
+sudo systemctl enable smbd 2>/dev/null || true
+sudo systemctl restart nmbd 2>/dev/null || sudo service nmbd restart 2>/dev/null || true
+sudo systemctl enable nmbd 2>/dev/null || true
+# Setup wsdd service for Windows network discovery
+if [ -f wsdd.service ]; then
+    sudo cp wsdd.service /etc/systemd/system/wsdd.service
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now wsdd.service 2>/dev/null || true
+fi
+
 echo "Install complete. Run 'sudo systemctl start usb-hub.service' to begin."
+

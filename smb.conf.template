@@ -1,0 +1,64 @@
+# ==============================================================================
+# Samba Configuration Template for Media Upload Hub
+# ==============================================================================
+
+[global]
+    workgroup = WORKGROUP
+    server string = Media Upload Hub
+    netbios name = MEDIAHUB
+    server role = standalone server
+    security = user
+    map to guest = Bad User
+    usershare allow guests = yes
+
+    # Network & Performance Optimizations (letting Linux kernel auto-tune socket buffers)
+    min receivefile size = 16384
+    use sendfile = yes
+    aio read size = 16384
+    aio write size = 16384
+
+    # macOS AppleDouble / Finder Optimizations (vfs_fruit)
+    vfs objects = catia fruit streams_xattr
+    fruit:metadata = stream
+    fruit:model = Macmini
+    fruit:posix_rename = yes
+    fruit:veto_appledouble = no
+    fruit:wipe_intentionally_left_blank_rfork = yes
+    fruit:delete_empty_adfiles = yes
+    fruit:encoding = native
+
+    # Logging
+    log file = /var/log/samba/log.%m
+    max log size = 1000
+    logging = file
+    panic action = /usr/share/samba/panic-action %d
+
+# ------------------------------------------------------------------------------
+# Internal Storage Share (/var/lib/media_upload)
+# ------------------------------------------------------------------------------
+[Internal]
+    comment = Media Hub Internal Storage & Staging
+    path = /var/lib/media_upload
+    browseable = yes
+    read only = no
+    guest ok = yes
+    writeable = yes
+    force user = USER_NAME
+    create mask = 0775
+    directory mask = 0775
+    public = yes
+
+# ------------------------------------------------------------------------------
+# External HDD Share (/mnt/external_drive)
+# ------------------------------------------------------------------------------
+[External]
+    comment = Media Hub Permanent External HDD
+    path = /mnt/external_drive
+    browseable = yes
+    read only = no
+    guest ok = yes
+    writeable = yes
+    force user = USER_NAME
+    create mask = 0775
+    directory mask = 0775
+    public = yes

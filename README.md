@@ -130,4 +130,49 @@ The **Download Station** allows you to browse the web, cloud storage (Google Dri
 - **Live Dual-Telemetry**: Live percent hero, download speed, upload speed, and active file progress.
 - **Persistent SQLite Audit History**: Detailed logs of every downloaded & uploaded file with retry controls.
 
+---
 
+## Network File Sharing (SMB / Windows & Mac Share)
+
+Media Upload Hub automatically shares both the **Internal Storage** and **External HDD** over the local network via Samba (SMB), allowing you to copy files to and from the server from any Mac, Windows PC, iPhone/iPad, or Android phone without opening a terminal.
+
+### Configured Network Shares
+
+| Share Name | Linux Mount Path | Access Permission | Best For |
+|---|---|---|---|
+| `Internal` | `/var/lib/media_upload` | Read / Write (Guest & User) | Internal staging, app DB, and local runs |
+| `External` | `/mnt/external_drive` | Read / Write (Guest & User) | 5.5TB External HDD, Downloads, and large media libraries |
+
+### Connecting from Your Devices
+
+#### 🍏 macOS
+1. Open **Finder**.
+2. Press <kbd>Cmd</kbd> + <kbd>K</kbd> (or click **Go** &rarr; **Connect to Server...** in the top menu).
+3. Enter the server URL:
+   - For External HDD: `smb://<device-ip>/External` (e.g. `smb://192.168.1.50/External`)
+   - For Internal Storage: `smb://<device-ip>/Internal`
+4. Click **Connect** and select **Guest** (or enter your Linux user credentials).
+
+#### 🪟 Windows PC
+1. Press <kbd>Win</kbd> + <kbd>R</kbd> to open the Run dialog.
+2. Enter the UNC path:
+   - For External HDD: `\\<device-ip>\External` (e.g. `\\192.168.1.50\External`)
+   - For Internal Storage: `\\<device-ip>\Internal`
+3. Press **Enter**. (Optionally right-click the folder and select **Map network drive...** to assign a drive letter like `Z:`).
+
+#### 📱 iPhone / iPad (iOS Files App)
+1. Open the built-in **Files** app.
+2. Tap the **`...`** button in the top right of the Browse tab.
+3. Tap **Connect to Server**.
+4. Enter `smb://<device-ip>` and tap **Connect**. Select **Guest** and tap **Next**.
+
+#### 🤖 Android
+1. Open your favorite file manager (e.g., **VLC**, **CX File Explorer**, **Solid Explorer**, or **FX File Explorer**).
+2. Add a new **Network / SMB** connection and enter `<device-ip>`.
+
+### Managing SMB Service
+You can check live SMB status, copy connection URLs with 1-click, and restart the Samba daemon directly in the Web UI under the **Settings** tab &rarr; **SMB Network File Sharing** card, or via terminal:
+```bash
+sudo systemctl status smbd
+sudo systemctl restart smbd
+```

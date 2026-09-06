@@ -1966,3 +1966,205 @@ select.form-input { cursor: pointer; }
     border: 1px solid var(--border);
 }
 
+/* =============================================================================
+   SMB Network Sharing Styles
+   ============================================================================= */
+.smb-shares-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 10px;
+}
+
+.smb-share-item {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+}
+
+.smb-share-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.smb-share-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.smb-icon-box {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.smb-icon-internal {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+}
+
+.smb-icon-external {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+}
+
+.smb-share-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    display: block;
+}
+
+.smb-share-path {
+    font-size: 11px;
+    color: var(--text-faint);
+    font-family: var(--font-mono, monospace);
+    display: block;
+}
+
+.smb-url-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.smb-url-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border-subtle);
+}
+
+.smb-url-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-sub);
+    min-width: 86px;
+    flex-shrink: 0;
+}
+
+.smb-url-code {
+    font-family: var(--font-mono, monospace);
+    font-size: 11.5px;
+    color: var(--blue);
+    flex: 1;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.btn-copy-smb {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.btn-copy-smb:hover {
+    background: var(--blue-soft);
+    color: var(--blue);
+    border-color: var(--blue);
+}
+
+.smb-guide-details {
+    margin-top: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+}
+
+.smb-guide-summary {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-sub);
+    cursor: pointer;
+    user-select: none;
+}
+
+.smb-guide-summary:hover {
+    color: var(--text);
+}
+
+.smb-guide-content {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 8px;
+}
+
+.smb-guide-step {
+    font-size: 11.5px;
+    color: var(--text-sub);
+    line-height: 1.5;
+}
+
+.smb-guide-step strong {
+    color: var(--text);
+}
+
+.smb-guide-step kbd {
+    font-family: var(--font-mono, monospace);
+    font-size: 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 4px;
+    color: var(--text);
+}
+
+.smb-guide-step code {
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    color: var(--blue);
+    background: var(--surface2);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.smb-actions-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 14px;
+}
+
+.smb-quick-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-family: var(--font-mono, monospace);
+    background: rgba(56, 189, 248, 0.12);
+    color: #38bdf8;
+    padding: 3px 8px;
+    border-radius: 12px;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.smb-quick-pill:hover {
+    background: rgba(56, 189, 248, 0.22);
+    border-color: #38bdf8;
+}
+
+

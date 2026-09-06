@@ -34,6 +34,9 @@ from src.download_station_handler import (
     fetch_proxied_web_resource, start_download_folder_watcher,
     browser_navigate_url, browser_restart_service, browser_get_status
 )
+from src.smb_handler import (
+    get_smb_status, restart_smb_service
+)
 
 main_loop = None
 
@@ -458,6 +461,21 @@ def get_network_speed():
         "rx_mb_s": _live_state.get("net_rx_mb_s", 0.0),
         "tx_mb_s": _live_state.get("net_tx_mb_s", 0.0)
     }
+
+# ---------------------------------------------------------------------------
+# SMB / Network File Sharing
+# ---------------------------------------------------------------------------
+
+@app.get("/api/smb/status")
+def smb_status():
+    """Return SMB server state, LAN IP, and connection URLs for Mac/Windows."""
+    return get_smb_status()
+
+@app.post("/api/smb/restart")
+def smb_restart():
+    """Restart the Samba daemon service."""
+    return restart_smb_service()
+
 
 # ---------------------------------------------------------------------------
 # External Drive — completely separate from USB workflow

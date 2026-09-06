@@ -1,0 +1,12 @@
+[Unit]
+Description=Web Services Dynamic Discovery host daemon (WSDD)
+After=network.target smbd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/wsdd --shortlog -w WORKGROUP
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
